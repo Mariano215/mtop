@@ -42,9 +42,10 @@ anything anywhere. `mtop scan` finds the tools you already have,
 `mtop run -- <cmd>` routes one of them through MTop with no config editing,
 and `--history` keeps the numbers so you can look back.
 
-**What it is not.** It cannot see traffic from a process you have not routed
-through it. There is no passive system-wide capture, no eBPF, no packet
-sniffing. That is a deliberate scope choice, not a missing feature: see
+**What it is not.** It cannot see network traffic from a process you have not
+routed through it. There is no eBPF and no packet sniffing. The one passive
+source is the transcript Claude Code writes to disk: see
+[Claude Code without a proxy](#claude-code-without-a-proxy). That is a deliberate scope choice, not a missing feature: see
 [the specification](docs/SPEC.md) for the reasoning.
 
 ## Install
@@ -94,6 +95,7 @@ The dashboard reads these keys. There are no other bindings.
 | `--once` | off | Print one JSON snapshot and exit. Cannot run with `--upstream` |
 | `--ollama <URL>` | `http://127.0.0.1:11434` | Ollama origin to poll |
 | `--no-ollama` | off | Skip Ollama polling |
+| `--no-tail` | off | Do not read Claude Code transcripts under `~/.claude/projects` |
 | `--vllm <URL>` | none | vLLM origin for server-level metrics |
 | `--upstream <SPEC>` | none | Turn on a proxy listener. Repeatable. `URL` or `PROVIDER=URL`. No `/v1` suffix |
 | `--listen <ADDR>` | `127.0.0.1:8088` | First proxy port. Must be loopback. Later upstreams count up from here |
@@ -118,6 +120,18 @@ it finds reaches the store, the JSON snapshot or any log.
 
 Finding a tool does not monitor it. You still have to point that tool at the
 matching port.
+
+## Claude Code without a proxy
+
+Claude Code appends every assistant turn, with the model name and the token
+counts the API reported, to a transcript under `~/.claude/projects/`. A plain
+`mtop` reads those files and shows each turn as a `claude-code` request, so a
+Claude Code session started in any other terminal appears with no routing and
+no configuration. Transcripts idle for more than an hour are skipped until
+they grow again.
+
+Only the numbers and the model name are taken. Prompts and responses in the
+same lines are never retained. Use `--no-tail` to turn this off.
 
 ## Run a tool through MTop
 

@@ -123,7 +123,7 @@ const PROVIDERS: &[Provider] = &[
     },
 ];
 
-fn home() -> Option<PathBuf> {
+pub fn home() -> Option<PathBuf> {
     env::var_os("HOME")
         .or_else(|| env::var_os("USERPROFILE"))
         .map(PathBuf::from)

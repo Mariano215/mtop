@@ -4,7 +4,7 @@ use mtop::{
     model::{Backend, Price, RequestMetric, Store, Usage},
     poller,
     proxy::{Proxy, Timeouts},
-    scan, ui,
+    scan, tail, ui,
 };
 use std::{io::IsTerminal, net::SocketAddr, path::PathBuf, time::Duration};
 
@@ -53,6 +53,9 @@ struct Args {
     ollama: String,
     #[arg(long)]
     no_ollama: bool,
+    /// Do not read Claude Code transcripts under ~/.claude/projects.
+    #[arg(long)]
+    no_tail: bool,
     #[arg(long)]
     vllm: Option<String>,
     /// Upstream to observe. Repeat for several. Either a bare URL, which uses
@@ -298,6 +301,9 @@ async fn main() -> anyhow::Result<()> {
                 });
             store.lock().unwrap().backend(rows, source);
         }
+        if let Some(dir) = (!args.no_tail).then(tail::claude_dir).flatten() {
+            tail::Tailer::default().poll(&dir, &store);
+        }
     } else {
         anyhow::ensure!(
             std::io::stdout().is_terminal(),
@@ -308,6 +314,9 @@ async fn main() -> anyhow::Result<()> {
         }
         if let Some(base) = args.vllm {
             tokio::spawn(poller::run(store.clone(), "vllm", base));
+        }
+        if let Some(dir) = (!args.no_tail).then(tail::claude_dir).flatten() {
+            tokio::spawn(tail::run(store.clone(), dir));
         }
     }
     if args.once {
