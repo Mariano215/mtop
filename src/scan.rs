@@ -65,7 +65,7 @@ const TOOLS: &[Tool] = &[
         name: "Cursor",
         config: &[".cursor"],
         cli: "cursor-agent",
-        route: "set the OpenAI base URL in Cursor settings",
+        route: "talks to Cursor's own backend; not observable locally",
         provider: "openai",
     },
     Tool {
@@ -164,6 +164,8 @@ fn keys_set(keys: &[&'static str]) -> Vec<&'static str> {
 /// One line per finding, plus the upstream arguments the findings imply.
 pub struct Report {
     pub tools: Vec<String>,
+    /// (name, route) for every tool found, for the dashboard's sources panel.
+    pub found: Vec<(&'static str, &'static str)>,
     pub providers: Vec<String>,
     pub upstreams: Vec<&'static str>,
 }
@@ -171,6 +173,7 @@ pub struct Report {
 pub fn scan() -> Report {
     let home = home();
     let mut tools = vec![];
+    let mut found_tools = vec![];
     let mut tool_upstreams: Vec<&'static str> = vec![];
     for tool in TOOLS {
         let found: Vec<&str> = home
@@ -191,6 +194,7 @@ pub fn scan() -> Report {
         if cli {
             evidence.push(format!("{} on PATH", tool.cli));
         }
+        found_tools.push((tool.name, tool.route));
         tools.push(format!(
             "{:<12} {}\n             {}",
             tool.name,
@@ -229,6 +233,7 @@ pub fn scan() -> Report {
 
     Report {
         tools,
+        found: found_tools,
         providers,
         upstreams,
     }
@@ -309,6 +314,7 @@ mod tests {
     fn builds_a_command_only_from_observable_providers() {
         let report = Report {
             tools: vec![],
+            found: vec![],
             providers: vec![],
             upstreams: vec!["openai=https://api.openai.com"],
         };
@@ -318,6 +324,7 @@ mod tests {
         // Nothing observable means no command to suggest, not an empty one.
         let empty = Report {
             tools: vec![],
+            found: vec![],
             providers: vec![],
             upstreams: vec![],
         };

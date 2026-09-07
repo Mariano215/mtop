@@ -85,6 +85,8 @@ pub struct Store {
     pub backends: Vec<Backend>,
     /// One "provider url -> listen address" line per running proxy listener.
     pub listeners: Vec<String>,
+    /// One "tool name -> what MTop does about it" pair per tool found on this machine.
+    pub sources: Vec<(String, String)>,
     pub completed: u64,
     pub evicted: u64,
     pub known_cost_usd: f64,
@@ -102,6 +104,7 @@ impl Store {
             requests: VecDeque::new(),
             backends: vec![],
             listeners: vec![],
+            sources: vec![],
             completed: 0,
             evicted: 0,
             known_cost_usd: 0.0,
@@ -132,6 +135,13 @@ impl Store {
             let _ = history.send(item.clone());
         }
         self.update(item);
+    }
+    /// Set the status line for one tool, replacing any earlier one by name.
+    pub fn source(&mut self, name: &str, status: String) {
+        match self.sources.iter_mut().find(|(n, _)| n == name) {
+            Some(entry) => entry.1 = status,
+            None => self.sources.push((name.into(), status)),
+        }
     }
     pub fn backend(&mut self, items: Vec<Backend>, source: &str) {
         self.backends.retain(|b| b.source != source);

@@ -53,7 +53,7 @@ struct Args {
     ollama: String,
     #[arg(long)]
     no_ollama: bool,
-    /// Do not read Claude Code transcripts under ~/.claude/projects.
+    /// Do not read Claude Code or Codex transcripts from the home directory.
     #[arg(long)]
     no_tail: bool,
     #[arg(long)]
@@ -258,6 +258,13 @@ async fn main() -> anyhow::Result<()> {
         );
         std::process::exit(status.code().unwrap_or(1));
     }
+    if !args.demo {
+        // Every tool found gets a line. The tailer overwrites the ones it reads.
+        let mut s = store.lock().unwrap();
+        for (name, route) in scan::scan().found {
+            s.source(name, format!("installed; {route}"));
+        }
+    }
     if args.demo {
         let mut s = store.lock().unwrap();
         s.backends.push(Backend {
@@ -301,8 +308,14 @@ async fn main() -> anyhow::Result<()> {
                 });
             store.lock().unwrap().backend(rows, source);
         }
-        if let Some(dir) = (!args.no_tail).then(tail::claude_dir).flatten() {
-            tail::Tailer::default().poll(&dir, &store);
+        if !args.no_tail {
+            let mut tailer = tail::Tailer::default();
+            for (source, dir) in tail::SOURCES
+                .iter()
+                .filter_map(|s| s.path().map(|p| (s, p)))
+            {
+                tailer.poll(source, &dir, &store);
+            }
         }
     } else {
         anyhow::ensure!(
@@ -315,8 +328,8 @@ async fn main() -> anyhow::Result<()> {
         if let Some(base) = args.vllm {
             tokio::spawn(poller::run(store.clone(), "vllm", base));
         }
-        if let Some(dir) = (!args.no_tail).then(tail::claude_dir).flatten() {
-            tokio::spawn(tail::run(store.clone(), dir));
+        if !args.no_tail {
+            tokio::spawn(tail::run(store.clone()));
         }
     }
     if args.once {
