@@ -233,16 +233,37 @@ pub fn apply(steps: Vec<Step>, yes: bool) -> Result<()> {
             std::fs::copy(&step.path, &backup)?;
             println!("{:<12} backup {}", step.tool, backup.display());
         }
-        std::fs::write(&step.path, next)?;
-        // A file created here sits beside credentials: owner-only, like the
-        // tools themselves create it. An existing file keeps its own bits.
-        #[cfg(unix)]
-        if !existed {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&step.path, std::fs::Permissions::from_mode(0o600))?;
-        }
+        write_atomic(&step.path, &next, existed)?;
         println!("{:<12} written {}", step.tool, step.path.display());
     }
+    Ok(())
+}
+
+/// Write beside the target, sync, then rename over it, so a crash mid-write
+/// leaves either the old file or the new one, never a torn one. These files
+/// sit beside credentials: a new one is owner-only, like the tools create
+/// it, and an existing one keeps its own bits.
+fn write_atomic(path: &Path, text: &str, existed: bool) -> Result<()> {
+    let tmp = path.with_extension(format!(
+        "{}.mtop.tmp",
+        path.extension().and_then(|e| e.to_str()).unwrap_or("")
+    ));
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(text.as_bytes())?;
+        f.sync_all()?;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = if existed {
+            std::fs::metadata(path)?.permissions().mode()
+        } else {
+            0o600
+        };
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(mode))?;
+    }
+    std::fs::rename(&tmp, path)?;
     Ok(())
 }
 
@@ -265,7 +286,8 @@ mod tests {
         assert_eq!(v["env"]["OTEL_EXPORTER_OTLP_ENDPOINT"], base);
         assert_eq!(v["env"]["OTEL_EXPORTER_OTLP_PROTOCOL"], "http/json");
         assert!(v["env"].get("OTEL_LOG_USER_PROMPTS").is_none());
-        std::fs::write(&path, &next).unwrap();
+        write_atomic(&path, &next, true).unwrap();
+        assert!(!path.with_extension("json.mtop.tmp").exists());
         assert!(
             claude(&path, base, false).unwrap().next.is_none(),
             "idempotent"
