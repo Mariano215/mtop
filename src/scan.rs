@@ -16,6 +16,20 @@ struct Tool {
     cli: &'static str,
     /// How to route this tool through MTop.
     route: &'static str,
+    /// Provider whose upstream this tool talks to. Empty when unsupported.
+    /// A tool present on disk implies its upstream even when no API key is in
+    /// the environment, because most tools keep credentials in their own config.
+    provider: &'static str,
+}
+
+/// The `--upstream` argument that observes a provider.
+fn upstream_for(provider: &str) -> Option<&'static str> {
+    match provider {
+        "openai" => Some("openai=https://api.openai.com"),
+        "anthropic" => Some("anthropic=https://api.anthropic.com"),
+        "ollama" => Some("ollama=http://127.0.0.1:11434"),
+        _ => None,
+    }
 }
 
 const TOOLS: &[Tool] = &[
@@ -24,48 +38,56 @@ const TOOLS: &[Tool] = &[
         config: &[".claude/settings.json", ".claude.json"],
         cli: "claude",
         route: "set ANTHROPIC_BASE_URL to the anthropic port",
+        provider: "anthropic",
     },
     Tool {
         name: "Codex",
         config: &[".codex/config.toml"],
         cli: "codex",
         route: "set the base URL in ~/.codex/config.toml to the openai port",
+        provider: "openai",
     },
     Tool {
         name: "Ollama",
         config: &[".ollama"],
         cli: "ollama",
         route: "point the client at the ollama port, or set OLLAMA_HOST",
+        provider: "ollama",
     },
     Tool {
         name: "Continue",
         config: &[".continue/config.json"],
         cli: "",
         route: "set apiBase per model in ~/.continue/config.json",
+        provider: "openai",
     },
     Tool {
         name: "Cursor",
         config: &[".cursor"],
         cli: "cursor-agent",
         route: "set the OpenAI base URL in Cursor settings",
+        provider: "openai",
     },
     Tool {
         name: "Aider",
         config: &[".aider.conf.yml"],
         cli: "aider",
         route: "set OPENAI_API_BASE or ANTHROPIC_BASE_URL",
+        provider: "openai",
     },
     Tool {
         name: "Gemini CLI",
         config: &[".gemini"],
         cli: "gemini",
         route: "no Gemini parser yet; traffic would forward but not be parsed",
+        provider: "",
     },
     Tool {
         name: "Zed",
         config: &[".config/zed/settings.json"],
         cli: "zed",
         route: "set the provider api_url in Zed settings",
+        provider: "openai",
     },
 ];
 
@@ -136,6 +158,7 @@ pub struct Report {
 pub fn scan() -> Report {
     let home = home();
     let mut tools = vec![];
+    let mut tool_upstreams: Vec<&'static str> = vec![];
     for tool in TOOLS {
         let found: Vec<&str> = home
             .as_ref()
@@ -161,6 +184,9 @@ pub fn scan() -> Report {
             evidence.join(", "),
             tool.route
         ));
+        if let Some(u) = upstream_for(tool.provider) {
+            tool_upstreams.push(u);
+        }
     }
 
     let mut providers = vec![];
@@ -184,6 +210,7 @@ pub fn scan() -> Report {
         };
         providers.push(format!("{:<24} {status}{note}", set.join(", ")));
     }
+    upstreams.extend(tool_upstreams);
     upstreams.sort_unstable();
     upstreams.dedup();
 
@@ -242,6 +269,28 @@ impl Report {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_tool_declares_a_provider_we_can_observe_or_none() {
+        for tool in TOOLS {
+            if tool.provider.is_empty() {
+                continue;
+            }
+            assert!(
+                upstream_for(tool.provider).is_some(),
+                "{} names provider {:?}, which has no upstream",
+                tool.name,
+                tool.provider
+            );
+        }
+        // A tool present on disk must imply its upstream even with no API key set,
+        // because most tools keep credentials in their own config, not the environment.
+        assert_eq!(
+            upstream_for("anthropic"),
+            Some("anthropic=https://api.anthropic.com")
+        );
+        assert!(upstream_for("gemini").is_none());
+    }
 
     #[test]
     fn builds_a_command_only_from_observable_providers() {
