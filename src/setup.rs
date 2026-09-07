@@ -270,6 +270,8 @@ fn write_atomic(path: &Path, text: &str, existed: bool) -> Result<()> {
         f.write_all(text.as_bytes())?;
         f.sync_all()?;
     }
+    #[cfg(not(unix))]
+    let _ = existed;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

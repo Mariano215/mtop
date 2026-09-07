@@ -238,8 +238,12 @@ mod tests {
             .unwrap();
         // Dropping the last sender ends the writer thread once the queue drains.
         drop(sender);
-        for _ in 0..50 {
-            if summary(&path, 0).map(|r| !r.is_empty()).unwrap_or(false) {
+        // Wait for both rows, not just the first: the writer is a thread.
+        for _ in 0..250 {
+            if summary(&path, 0)
+                .map(|r| r.iter().map(|x| x.requests).sum::<u64>() >= 2)
+                .unwrap_or(false)
+            {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(20));

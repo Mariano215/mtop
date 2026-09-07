@@ -163,6 +163,8 @@ The dashboard reads these keys. There are no other bindings.
 |-----|--------|
 | `j` / `Down` | Move the selection down |
 | `k` / `Up` | Move the selection up |
+| `Enter` | Open the selected request in the middle box: every field MTop holds for it. `Enter` or `Esc` closes |
+| `Tab` | Cycle the middle box: backends, tools, totals by model, by project, by session, environment |
 | `s` | Cycle the request order: newest first, slowest turn first, most tokens first |
 | `Space` | Freeze the display. Collection continues in the background |
 | `q` / `Esc` | Quit and restore the terminal |
@@ -252,6 +254,32 @@ For these rows `Dur ms` is turn time: the usage line's own timestamp minus
 the timestamp of the last input line before it (a user turn or a tool
 result). It is wall clock from the transcript, not a number the API sent, and
 it stays `—` when either stamp is missing. TTFT is unavailable for them.
+
+## What is reported
+
+Per request, in the table and in the `Enter` detail view: provider, model,
+status (stop reason, `telemetry`, or `api error` in red), source (main,
+subagent, auxiliary), agent or skill name, speed or effort tier, TTFT, turn
+time, input, cache read and write, cache hit share, context used against the
+model's window, output, reasoning tokens, tool calls, HTTP status and attempt
+on errors, cost, parse errors, session and project.
+
+In the middle box, one `Tab` at a time: local backends; tools by name with
+calls, failures, average and total time, and Claude Code's accept and reject
+decisions; totals by model, by project (working directory name) and by
+session; and the environment: each CLI's version, Claude Code's model and
+effort, Codex's approval and sandbox policy from its transcripts, whether each
+tool's telemetry export is on, and exported counters such as active time,
+lines of code changed, commits and pull requests.
+
+In the header: tokens per minute and dollars per hour over the last five
+minutes (transcript history read at startup is excluded), tool calls, models
+and sessions seen, and Codex rate limits with percent used, window and reset
+time, colored green, yellow past 50 percent and red past 80.
+
+`--history` stores the same per-request fields, including reasoning tokens,
+source, session, project, agent and HTTP status, and adds the columns to an
+existing file on first use.
 
 The request table shows only columns some visible row can fill: `TTFT ms`
 appears once a proxied or telemetry request reports it, `Est. USD` once a
