@@ -51,6 +51,7 @@ The dashboard reads these keys. There are no other bindings.
 
 | Flag | Default | Meaning |
 |------|---------|---------|
+| `scan` | | Subcommand. List installed AI tools and provider keys, then exit |
 | `--demo` | off | Synthetic data, no network calls |
 | `--once` | off | Print one JSON snapshot and exit. Cannot run with `--upstream` |
 | `--ollama <URL>` | `http://127.0.0.1:11434` | Ollama origin to poll |
@@ -64,6 +65,21 @@ The dashboard reads these keys. There are no other bindings.
 | `--request-timeout <SECONDS>` | `600` | Whole upstream exchange, 1 to 86400 |
 | `--body-timeout <SECONDS>` | `30` | Client body intake, 1 to 86400 |
 | `--metrics-only` | always on | Accepted for explicit invocation. v0.1 has no other mode |
+
+## Find what to observe
+
+```sh
+cargo run --locked -- scan
+```
+
+`scan` lists the AI tools and provider keys on this machine, then prints the
+exact `mtop` command that observes them. It tests only whether a path or
+command exists and whether a variable is set. It never opens a config file and
+never reads a key's value, because those paths sit beside credentials. Nothing
+it finds reaches the store, the JSON snapshot or any log.
+
+Finding a tool does not monitor it. You still have to point that tool at the
+matching port.
 
 ## Observe requests
 

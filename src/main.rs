@@ -1,9 +1,9 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use mtop::{
     model::{Backend, Price, RequestMetric, Store, Usage},
     poller,
     proxy::{Proxy, Timeouts},
-    ui,
+    scan, ui,
 };
 use std::{io::IsTerminal, net::SocketAddr, path::PathBuf, time::Duration};
 
@@ -24,6 +24,8 @@ fn split_upstream<'a>(spec: &'a str, default: &'a str) -> (&'a str, &'a str) {
     about = "Local model telemetry and an opt-in streaming API proxy"
 )]
 struct Args {
+    #[command(subcommand)]
+    command: Option<Command>,
     /// Run without network access, showing synthetic data.
     #[arg(long)]
     demo: bool,
@@ -63,9 +65,20 @@ struct Args {
     metrics_only: bool,
 }
 
+#[derive(Subcommand)]
+enum Command {
+    /// List AI tools and provider keys found on this machine, and the command
+    /// that observes them. Reads no file contents and no key values.
+    Scan,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    if let Some(Command::Scan) = args.command {
+        scan::scan().print();
+        return Ok(());
+    }
     anyhow::ensure!(
         args.listen.ip().is_loopback(),
         "proxy listener must be a loopback address"
