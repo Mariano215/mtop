@@ -52,6 +52,7 @@ The dashboard reads these keys. There are no other bindings.
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `scan` | | Subcommand. List installed AI tools and provider keys, then exit |
+| `run -- <CMD>` | | Subcommand. Run `<CMD>` with its base URLs pointed at MTop |
 | `--demo` | off | Synthetic data, no network calls |
 | `--once` | off | Print one JSON snapshot and exit. Cannot run with `--upstream` |
 | `--ollama <URL>` | `http://127.0.0.1:11434` | Ollama origin to poll |
@@ -80,6 +81,26 @@ it finds reaches the store, the JSON snapshot or any log.
 
 Finding a tool does not monitor it. You still have to point that tool at the
 matching port.
+
+## Run a tool through MTop
+
+`run` starts the listeners, points the child process at them, runs it, and
+reports what it used. Nothing global changes: the variables are set for that
+one process only.
+
+```sh
+# Use whatever `scan` found.
+cargo run --locked -- run -- claude
+
+# Or name the upstreams yourself.
+cargo run --locked -- run --upstream ollama=http://127.0.0.1:11434 -- ollama run qwen3:0.6b
+```
+
+Variables set per provider: `openai` sets `OPENAI_BASE_URL` and
+`OPENAI_API_BASE` with the `/v1` suffix; `anthropic` sets
+`ANTHROPIC_BASE_URL`; `ollama` sets `OLLAMA_HOST`. MTop prints each one it
+sets. The child keeps your terminal, so there is no dashboard in this mode.
+The exit code is the child's.
 
 ## Observe requests
 
