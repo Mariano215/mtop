@@ -219,24 +219,41 @@ pub fn apply(steps: Vec<Step>, yes: bool) -> Result<()> {
             return Ok(());
         }
     }
+    // Every file gets its turn even if an earlier one fails, and the end
+    // report names each one, so a partial result is never a mystery.
+    let mut failed = vec![];
     for step in pending {
-        let next = step.next.unwrap_or_default();
-        if let Some(parent) = step.path.parent() {
-            std::fs::create_dir_all(parent)?;
+        match write_step(&step) {
+            Ok(()) => println!("{:<12} written {}", step.tool, step.path.display()),
+            Err(e) => {
+                println!("{:<12} FAILED {}: {e}", step.tool, step.path.display());
+                failed.push(step.tool);
+            }
         }
-        let existed = step.path.exists();
-        if existed {
-            let backup = step.path.with_extension(format!(
-                "{}.mtop.bak",
-                step.path.extension().and_then(|e| e.to_str()).unwrap_or("")
-            ));
-            std::fs::copy(&step.path, &backup)?;
-            println!("{:<12} backup {}", step.tool, backup.display());
-        }
-        write_atomic(&step.path, &next, existed)?;
-        println!("{:<12} written {}", step.tool, step.path.display());
     }
+    anyhow::ensure!(
+        failed.is_empty(),
+        "not written: {}. The files listed as written above did change.",
+        failed.join(", ")
+    );
     Ok(())
+}
+
+fn write_step(step: &Step) -> Result<()> {
+    let next = step.next.as_deref().unwrap_or_default();
+    if let Some(parent) = step.path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let existed = step.path.exists();
+    if existed {
+        let backup = step.path.with_extension(format!(
+            "{}.mtop.bak",
+            step.path.extension().and_then(|e| e.to_str()).unwrap_or("")
+        ));
+        std::fs::copy(&step.path, &backup)?;
+        println!("{:<12} backup {}", step.tool, backup.display());
+    }
+    write_atomic(&step.path, next, existed)
 }
 
 /// Write beside the target, sync, then rename over it, so a crash mid-write

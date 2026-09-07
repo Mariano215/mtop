@@ -60,13 +60,67 @@ to its vendor's own backend, like Cursor or the desktop chat apps, is not
 observable from your machine by MTop or by anything else. That is a deliberate scope choice, not a missing feature: see
 [the specification](docs/SPEC.md) for the reasoning.
 
+## What it looks like
+
+A live capture, 120 columns, on a machine with Claude Code, Codex, Ollama,
+Cursor and Gemini CLI installed and no price table:
+
+```text
+┌ MTop 0.1 • LIVE / METRICS ONLY ──────────────────────────────────────────────────────────────────────────────────────┐
+│Completed 391  |  Priced estimate —  |  Unpriced 391 (no --prices given)  |  Evicted 0                                │
+│telemetry receiver http://127.0.0.1:4318 (mtop setup)                                                                 │
+│Claude Code  watching ~/.claude/projects, 8 active                                                                    │
+│Codex        watching ~/.codex/sessions, 0 active                                                                     │
+│Ollama       installed; point the client at the ollama port, or set OLLAMA_HOST                                       │
+│Continue     installed; set apiBase per model in ~/.continue/config.json                                              │
+│Cursor       installed; talks to Cursor's own backend; not observable locally                                         │
+│Gemini CLI   installed; run `mtop setup`; the proxy has no Gemini parser, telemetry does                              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Backends • polling does not observe individual requests ─────────────────────────────────────────────────────────────┐
+│Source    Status        Model                                                  VRAM         Running  Waiting  KV max  │
+│ollama    idle                                                                 —            —        —        —       │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Observed requests • Cache = tokens read from or written to prompt cache • — means unavailable ───��───────────────────
+│Provider     Model                                                Status     Dur ms   Input    Cache    Output   Tools│
+│claude-code  claude-opus-4-7                                      tool_use   1640.0   1        63313    69       1    │
+│claude-code  claude-opus-4-7                                      tool_use   62855.0  1        57925    5314     0    │
+│claude-code  claude-opus-4-7                                      tool_use   2348.0   1        45318    227      1    │
+│claude-code  claude-opus-4-7                                      tool_use   2961.0   6        33932    209      0    │
+│claude-code  claude-opus-4-7                                      tool_use   2532.0   1        52038    69       1    │
+│claude-code  claude-opus-4-7                                      tool_use   17686.0  1        50285    1679     0    │
+│claude-code  claude-opus-4-7                                      tool_use   53893.0  1        46401    3755     0    │
+│claude-code  claude-opus-4-7                                      tool_use   2491.0   1        42570    89       1    │
+│claude-code  claude-opus-4-7                                      tool_use   5245.0   1        34258    89       1    │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│↑/↓ or j/k select • Space freeze display • q/Esc quit • No prompts, credentials or tool arguments retained            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## Install
 
+One line, no toolchain. The script downloads the release binary for your
+machine, verifies its SHA-256, and puts `mtop` on your PATH. Nothing else is
+touched.
+
+```sh
+# macOS and Linux
+curl -fsSL https://raw.githubusercontent.com/Mariano215/mtop/main/install.sh | sh
+```
+
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/Mariano215/mtop/main/install.ps1 | iex
+```
+
 Prebuilt binaries for Linux (x86_64, aarch64), macOS (arm64, x86_64) and
-Windows (x86_64) are attached to each
+Windows (x86_64) are also attached to each
 [release](https://github.com/Mariano215/mtop/releases), each with a SHA-256
-file. On Arch, build from `packaging/aur/PKGBUILD`. Put the binary on your
-PATH, then:
+file, if you would rather place the file yourself. On Arch, build from
+`packaging/aur/PKGBUILD`. Then:
 
 ```sh
 mtop --demo   # synthetic data, no network, to see the screen
@@ -80,9 +134,6 @@ Codex already wrote (immediately, if any are less than an hour old),
 telemetry from tools you ran `setup` for (from their next call), and anything
 you route through `mtop run`. On a machine with none of those yet, the header
 still lists every tool found and the step that would observe it.
-
-Every `cargo run --locked --` example below is the same as `mtop` with the
-binary installed.
 
 ## Build from source
 
@@ -354,8 +405,7 @@ Anthropic input excludes separately reported cache tokens; OpenAI cached tokens 
 ## More
 
 - [The refined specification](docs/SPEC.md)
-- [The Mac/Codex handoff](docs/HANDOFF.md)
-- [Validation notes](docs/VALIDATION.md)
+- [Releasing](packaging/RELEASING.md)
 
 ## Status and roadmap
 

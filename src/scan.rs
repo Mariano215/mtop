@@ -37,21 +37,21 @@ const TOOLS: &[Tool] = &[
         name: "Claude Code",
         config: &[".claude/settings.json", ".claude.json"],
         cli: "claude",
-        route: "set ANTHROPIC_BASE_URL to the anthropic port",
+        route: "run `mtop setup`, or `mtop run -- claude`",
         provider: "anthropic",
     },
     Tool {
         name: "Codex",
         config: &[".codex/config.toml"],
         cli: "codex",
-        route: "set the base URL in ~/.codex/config.toml to the openai port",
+        route: "run `mtop setup`",
         provider: "openai",
     },
     Tool {
         name: "Ollama",
         config: &[".ollama"],
         cli: "ollama",
-        route: "point the client at the ollama port, or set OLLAMA_HOST",
+        route: "run `mtop run -- <your ollama client>`",
         provider: "ollama",
     },
     Tool {
@@ -79,7 +79,7 @@ const TOOLS: &[Tool] = &[
         name: "Gemini CLI",
         config: &[".gemini"],
         cli: "gemini",
-        route: "run `mtop setup`; the proxy has no Gemini parser, telemetry does",
+        route: "run `mtop setup`",
         provider: "",
     },
     Tool {
