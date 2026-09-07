@@ -16,8 +16,36 @@
 
 # MTop
 
-A Rust terminal console for local model telemetry and opt-in API request observation.
+[![CI](https://github.com/Mariano215/mtop/actions/workflows/ci.yml/badge.svg)](https://github.com/Mariano215/mtop/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://rustup.rs/)
+
+A terminal console for local model telemetry and opt-in API request
+observation. Think `htop`, but for the model calls your machine is making.
+
 **v0.1 is a tested starter implementation, not a universal passive AI monitor.**
+Read [Explicit limits](#explicit-limits) before you rely on it.
+
+## Why
+
+Model API spend is invisible until the invoice arrives, and the tools making
+those calls (Claude Code, Codex, Cursor, Aider, a local Ollama) each report
+their own usage differently, or not at all. MTop sits in one place and answers
+three questions:
+
+- What models is this machine actually calling, and how often?
+- How fast do they respond, and how many tokens do they burn?
+- What is that costing, with unknowns shown as unknown rather than zero?
+
+It does this without a kernel module, without root, and without sending
+anything anywhere. `mtop scan` finds the tools you already have,
+`mtop run -- <cmd>` routes one of them through MTop with no config editing,
+and `--history` keeps the numbers so you can look back.
+
+**What it is not.** It cannot see traffic from a process you have not routed
+through it. There is no passive system-wide capture, no eBPF, no packet
+sniffing. That is a deliberate scope choice, not a missing feature: see
+[the specification](docs/SPEC.md) for the reasoning.
 
 ## Install
 
@@ -239,6 +267,38 @@ Anthropic input excludes separately reported cache tokens; OpenAI cached tokens 
 - [The Mac/Codex handoff](docs/HANDOFF.md)
 - [Validation notes](docs/VALIDATION.md)
 
+## Status and roadmap
+
+v0.1 works and is tested on Linux, macOS and Windows. Known gaps, roughly in
+the order they matter:
+
+- OpenAI Responses normalization is partial, so some reasoning-model usage
+  reads as unknown when the API did report it.
+- No Gemini parser. Gemini traffic forwards correctly but is not parsed.
+- Pricing is manual. There is no bundled catalog yet, so cost is unknown
+  until you supply a `--prices` file.
+- No live totals while `run` has a child attached; the summary comes at exit.
+
+## Contributing
+
+Issues and pull requests are welcome. Before opening a PR:
+
+```sh
+cargo fmt --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
+```
+
+CI runs exactly those three on Linux, macOS and Windows, so a green local run
+is a green CI run. Non-trivial logic should arrive with a test that fails
+without the change.
+
+Two rules specific to this project. Never report a number the provider did not
+send: an unknown token count or missing price stays unknown and is excluded
+from totals, never defaulted to zero. And never widen what MTop retains:
+only numeric metadata and bounded labels reach the store, the JSON snapshot
+or the history file.
+
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). Copyright (c) 2026 Mariano Mattei.
