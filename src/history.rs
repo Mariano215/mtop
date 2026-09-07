@@ -52,6 +52,17 @@ pub fn open(path: &Path) -> anyhow::Result<Sender<RequestMetric>> {
     // WAL lets several MTop instances write the same file without blocking.
     connection.pragma_update(None, "journal_mode", "WAL")?;
     connection.execute_batch(SCHEMA)?;
+    // Columns added after v0.1.1. ALTER fails when the column exists; that is fine.
+    for column in [
+        "reasoning INTEGER",
+        "source TEXT",
+        "session TEXT",
+        "project TEXT",
+        "agent TEXT",
+        "http_status INTEGER",
+    ] {
+        let _ = connection.execute(&format!("ALTER TABLE requests ADD COLUMN {column}"), []);
+    }
 
     let (sender, receiver) = channel::<RequestMetric>();
     std::thread::spawn(move || {
@@ -59,8 +70,9 @@ pub fn open(path: &Path) -> anyhow::Result<Sender<RequestMetric>> {
             let _ = connection.execute(
                 "INSERT INTO requests (ts, provider, model, status, input, output,
                      cache_read, cache_write, ttft_ms, duration_ms, generation_tps,
-                     tool_calls, cost_usd)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+                     tool_calls, cost_usd, reasoning, source, session, project, agent,
+                     http_status)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
                 rusqlite::params![
                     now(),
                     m.provider,
@@ -75,6 +87,12 @@ pub fn open(path: &Path) -> anyhow::Result<Sender<RequestMetric>> {
                     m.generation_tps,
                     m.tool_calls,
                     m.estimated_cost_usd,
+                    m.reasoning,
+                    m.source,
+                    m.session,
+                    m.project,
+                    m.agent,
+                    m.http_status,
                 ],
             );
         }
@@ -220,8 +238,12 @@ mod tests {
             .unwrap();
         // Dropping the last sender ends the writer thread once the queue drains.
         drop(sender);
-        for _ in 0..50 {
-            if summary(&path, 0).map(|r| !r.is_empty()).unwrap_or(false) {
+        // Wait for both rows, not just the first: the writer is a thread.
+        for _ in 0..250 {
+            if summary(&path, 0)
+                .map(|r| r.iter().map(|x| x.requests).sum::<i64>() >= 2)
+                .unwrap_or(false)
+            {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(20));

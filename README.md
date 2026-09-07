@@ -42,17 +42,102 @@ anything anywhere. `mtop scan` finds the tools you already have,
 `mtop run -- <cmd>` routes one of them through MTop with no config editing,
 and `--history` keeps the numbers so you can look back.
 
-**What it is not.** It cannot see traffic from a process you have not routed
-through it. There is no passive system-wide capture, no eBPF, no packet
-sniffing. That is a deliberate scope choice, not a missing feature: see
+**How it sees a tool.** Three doors, and each tool has one or more:
+
+1. **Telemetry.** Claude Code, Codex and Gemini CLI can export their own usage
+   over OpenTelemetry. `mtop setup` turns that on, pointed at MTop. This is the
+   supported path and the most complete: the tool reports its own token
+   counts, timings and (for Claude Code) cost. See [Setup](#setup).
+2. **Transcripts.** Claude Code and Codex also write usage to disk. A plain
+   `mtop` reads those files with no setup at all. See
+   [Claude Code and Codex without a proxy](#claude-code-and-codex-without-a-proxy).
+3. **Proxy.** Anything that accepts a base URL can be pointed at MTop with
+   `mtop run -- <cmd>`. This is the only door for key-based tools like Aider.
+
+**What it is not.** It cannot see network traffic from a process that uses
+none of the doors. There is no eBPF and no packet sniffing. A tool that talks
+to its vendor's own backend, like Cursor or the desktop chat apps, is not
+observable from your machine by MTop or by anything else. That is a deliberate scope choice, not a missing feature: see
 [the specification](docs/SPEC.md) for the reasoning.
+
+## What it looks like
+
+A live capture, 130 columns, on a machine with Claude Code, Codex, Ollama,
+Cursor and Gemini CLI installed and no price table:
+
+```text
+┌ MTop 0.1 • LIVE / METRICS ONLY ────────────────────────────────────────────────────────────────────────────────────────────────┐
+│Completed 448  |  Priced estimate —  |  Unpriced 448 (no --prices given)  |  Evicted 0                                          │
+│Last 5 min: 0 tokens/min  |  — /hour  |  453 tool calls  |  6 models  |  25 sessions                                            │
+│telemetry receiver http://127.0.0.1:4318 (mtop setup)                                                                           │
+│Claude Code  watching ~/.claude/projects, 1 active                                                                              │
+│Codex        watching ~/.codex/sessions, 0 active                                                                               │
+│Ollama       installed; run `mtop run -- <your ollama client>`                                                                  │
+│Continue     installed; set apiBase per model in ~/.continue/config.json                                                        │
+│Cursor       installed; talks to Cursor's own backend; not observable locally                                                   │
+│Gemini CLI   installed; run `mtop setup`                                                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Backends • polling does not observe individual requests • Tab for more ────────────────────────────────────────────────────────┐
+│Source    Status        Model                                                            VRAM         Running  Waiting  KV max  │
+│ollama    idle                                                                           —            —        —        —       │
+│                                                                                                                                │
+│                                                                                                                                │
+│                                                                                                                                │
+│                                                                                                                                │
+│                                                                                                                                │
+└──────────────────────────────────────────────────────────────────────────��─────────────────────────────────────────────────────
+┌ Observed requests • sort: newest • Hit = cache read share • Ctx = context used • — means unavailable ──────────────────────────┐
+│Provider    Model                    Status    Src  Dur ms   Input   Cache   Hit  Output  Reason  Tools HTTP                    │
+│claude-code claude-opus-4-7          tool_use  main 2532.0   1       52038   97%  69      —       1     —                       │
+│claude-code claude-opus-4-7          tool_use  main 17686.0  1       50285   92%  1679    1093    0     —                       │
+│claude-code claude-opus-4-7          tool_use  main 53893.0  1       46401   92%  3755    3568    0     —                       │
+│claude-code claude-opus-4-7          tool_use  main 2491.0   1       42570   80%  89      —       1     —                       │
+│claude-code claude-opus-4-7          tool_use  main 5245.0   1       34258   85%  89      —       1     —                       │
+│claude-code claude-opus-4-7          tool_use  main 2362.0   6       28983   74%  125     34      0     —                       │
+│claude-code claude-sonnet-5          logged    suba 3098.0   2       65174   99%  1       —       0     —                       │
+│claude-code claude-sonnet-5          logged    suba 1578.0   2       64366   97%  6       —       0     —                       │
+│claude-code claude-sonnet-5          logged    suba 9763.0   2       62344   99%  2       —       0     —                       │
+│claude-code claude-sonnet-5          logged    suba 1551.0   2       61461   93%  3       —       0     —                       │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│↑/↓ j/k select • Enter detail • Tab panel: backends, tools, models, projects, sessions, environment • s sort • Space freeze • q │
+└────────��───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+```
 
 ## Install
 
+One line, no toolchain. The script downloads the release binary for your
+machine, verifies its SHA-256, and puts `mtop` on your PATH. Nothing else is
+touched.
+
+```sh
+# macOS and Linux
+curl -fsSL https://raw.githubusercontent.com/Mariano215/mtop/main/install.sh | sh
+```
+
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/Mariano215/mtop/main/install.ps1 | iex
+```
+
 Prebuilt binaries for Linux (x86_64, aarch64), macOS (arm64, x86_64) and
-Windows (x86_64) are attached to each
+Windows (x86_64) are also attached to each
 [release](https://github.com/Mariano215/mtop/releases), each with a SHA-256
-file. On Arch, build from `packaging/aur/PKGBUILD`.
+file, if you would rather place the file yourself. On Arch, build from
+`packaging/aur/PKGBUILD`. Then:
+
+```sh
+mtop --demo   # synthetic data, no network, to see the screen
+mtop scan     # what is on this machine, and the exact command that observes each tool
+mtop setup    # one confirmed step to turn on Claude Code, Codex and Gemini CLI telemetry
+mtop          # live: every tool found, colored by state, and its calls as they happen
+```
+
+The request table fills from three sources: transcripts Claude Code and
+Codex already wrote (immediately, if any are less than an hour old),
+telemetry from tools you ran `setup` for (from their next call), and anything
+you route through `mtop run`. On a machine with none of those yet, the header
+still lists every tool found and the step that would observe it.
 
 ## Build from source
 
@@ -78,6 +163,9 @@ The dashboard reads these keys. There are no other bindings.
 |-----|--------|
 | `j` / `Down` | Move the selection down |
 | `k` / `Up` | Move the selection up |
+| `Enter` | Open the selected request in the middle box: every field MTop holds for it. `Enter` or `Esc` closes |
+| `Tab` | Cycle the middle box: backends, tools, totals by model, by project, by session, environment |
+| `s` | Cycle the request order: newest first, slowest turn first, most tokens first |
 | `Space` | Freeze the display. Collection continues in the background |
 | `q` / `Esc` | Quit and restore the terminal |
 | `Ctrl+C` | Quit and restore the terminal |
@@ -94,6 +182,10 @@ The dashboard reads these keys. There are no other bindings.
 | `--once` | off | Print one JSON snapshot and exit. Cannot run with `--upstream` |
 | `--ollama <URL>` | `http://127.0.0.1:11434` | Ollama origin to poll |
 | `--no-ollama` | off | Skip Ollama polling |
+| `--no-tail` | off | Do not read Claude Code or Codex transcripts from the home directory |
+| `--otlp <ADDR>` | `127.0.0.1:4318` | OpenTelemetry receiver address. Must be loopback |
+| `--no-otlp` | off | Do not start the OpenTelemetry receiver |
+| `setup [--remove] [--yes]` | | Subcommand. Write each tool's telemetry export config, pointed at `--otlp` |
 | `--vllm <URL>` | none | vLLM origin for server-level metrics |
 | `--upstream <SPEC>` | none | Turn on a proxy listener. Repeatable. `URL` or `PROVIDER=URL`. No `/v1` suffix |
 | `--listen <ADDR>` | `127.0.0.1:8088` | First proxy port. Must be loopback. Later upstreams count up from here |
@@ -118,6 +210,87 @@ it finds reaches the store, the JSON snapshot or any log.
 
 Finding a tool does not monitor it. You still have to point that tool at the
 matching port.
+
+## Setup
+
+```sh
+mtop setup
+```
+
+For each of Claude Code, Codex and Gemini CLI, `setup` prints the file and the
+change, asks, copies the file to `<file>.mtop.bak`, then writes. Nothing is
+written without a `y`, or `--yes`. `mtop setup --remove` takes the same keys
+out again. Only the named keys are touched; the rest of each file is kept as
+is and never printed.
+
+| Tool | File | Change |
+|------|------|--------|
+| Claude Code | `~/.claude/settings.json` | five `env` keys: enable telemetry, OTLP exporters, `http/json`, endpoint |
+| Codex | `~/.codex/config.toml` | an `[otel]` block between `# mtop-begin` and `# mtop-end` markers |
+| Gemini CLI | `~/.gemini/settings.json` | a `telemetry` block with a local OTLP target |
+
+Then run `mtop` and use the tool in any other terminal. The tool pushes each
+completed API call to `http://127.0.0.1:4318/v1/logs`, and the request table
+shows it with status `telemetry`. Prompt and response text stay redacted:
+`setup` never sets `OTEL_LOG_USER_PROMPTS` or its equivalents, and the
+receiver reads only the model name and the numeric fields of three events
+(`claude_code.api_request`, `codex.sse_event`, `gemini_cli.api_response`).
+Metrics and traces posts are accepted and discarded.
+
+If a tool already exports somewhere else, `setup` says so ("currently
+http://...") before asking, and a Codex `[otel]` section MTop did not write is
+never overwritten. The receiver binds loopback only and caps bodies at 4 MiB.
+
+## Claude Code and Codex without a proxy
+
+Claude Code appends every assistant turn, with the model name and the token
+counts the API reported, to a transcript under `~/.claude/projects/`. Codex
+appends a `token_count` event per turn under `~/.codex/sessions/`. A plain
+`mtop` reads both and shows each turn as a `claude-code` or `codex` request,
+so a session started in any other terminal appears with no routing and no
+configuration, whether you logged in with a subscription or a key.
+Transcripts idle for more than an hour are skipped until they grow again.
+For these rows `Dur ms` is turn time: the usage line's own timestamp minus
+the timestamp of the last input line before it (a user turn or a tool
+result). It is wall clock from the transcript, not a number the API sent, and
+it stays `—` when either stamp is missing. TTFT is unavailable for them.
+
+## What is reported
+
+Per request, in the table and in the `Enter` detail view: provider, model,
+status (stop reason, `telemetry`, or `api error` in red), source (main,
+subagent, auxiliary), agent or skill name, speed or effort tier, TTFT, turn
+time, input, cache read and write, cache hit share, context used against the
+model's window, output, reasoning tokens, tool calls, HTTP status and attempt
+on errors, cost, parse errors, session and project.
+
+In the middle box, one `Tab` at a time: local backends; tools by name with
+calls, failures, average and total time, and Claude Code's accept and reject
+decisions; totals by model, by project (working directory name) and by
+session; and the environment: each CLI's version, Claude Code's model and
+effort, Codex's approval and sandbox policy from its transcripts, whether each
+tool's telemetry export is on, and exported counters such as active time,
+lines of code changed, commits and pull requests.
+
+In the header: tokens per minute and dollars per hour over the last five
+minutes (transcript history read at startup is excluded), tool calls, models
+and sessions seen, and Codex rate limits with percent used, window and reset
+time, colored green, yellow past 50 percent and red past 80.
+
+`--history` stores the same per-request fields, including reasoning tokens,
+source, session, project, agent and HTTP status, and adds the columns to an
+existing file on first use.
+
+The request table shows only columns some visible row can fill: `TTFT ms`
+appears once a proxied or telemetry request reports it, `Est. USD` once a
+request is priced, `Parse` once a parse error has occurred.
+
+The dashboard header lists every tool `scan` found and what MTop is doing
+about it: `watching` with a count of transcripts written to in the last two
+minutes, or `installed` with the routing step that would observe it.
+
+Only the numbers and the model name are taken. Prompts and responses in the
+same lines are never retained. Use `--no-tail` to turn this off.
 
 ## Run a tool through MTop
 
@@ -226,7 +399,8 @@ The listener is loopback-only. Do not expose it with port forwarding: it has no 
 ## Explicit limits
 
 No eBPF capture, PID attribution, full agent execution trees, tool arguments, prompt inspector, process termination,
-Gemini-native parser, dedicated llama.cpp collector, cost-rate chart or automatic pricing catalog yet.
+Gemini parser on the proxy door (Gemini CLI is observed through `mtop setup` telemetry only), dedicated llama.cpp
+collector, cost-rate chart or automatic pricing catalog yet.
 Responses normalization is partial; tool counts are capped at 1,024 unique calls per request.
 TTFT means time from forwarding start to first visible text event. Nonstreaming TTFT is unavailable.
 No tokenization estimates are made. Polling cannot recover per-request usage.
@@ -264,8 +438,7 @@ Anthropic input excludes separately reported cache tokens; OpenAI cached tokens 
 ## More
 
 - [The refined specification](docs/SPEC.md)
-- [The Mac/Codex handoff](docs/HANDOFF.md)
-- [Validation notes](docs/VALIDATION.md)
+- [Releasing](packaging/RELEASING.md)
 
 ## Status and roadmap
 
@@ -274,7 +447,9 @@ the order they matter:
 
 - OpenAI Responses normalization is partial, so some reasoning-model usage
   reads as unknown when the API did report it.
-- No Gemini parser. Gemini traffic forwards correctly but is not parsed.
+- No Gemini parser on the proxy. Gemini CLI reports through `mtop setup`
+  telemetry; a raw Gemini API client pointed at the proxy forwards but is not
+  parsed.
 - Pricing is manual. There is no bundled catalog yet, so cost is unknown
   until you supply a `--prices` file.
 - No live totals while `run` has a child attached; the summary comes at exit.

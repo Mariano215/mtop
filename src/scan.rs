@@ -5,7 +5,7 @@
 //! variable's value, because these paths sit beside credentials. Nothing found
 //! here reaches the telemetry store, the JSON snapshot or any log.
 
-use std::{env, path::PathBuf};
+use std::{env, path::PathBuf, process::Command};
 
 /// A client that talks to a model API and can be pointed at a proxy port.
 struct Tool {
@@ -37,21 +37,21 @@ const TOOLS: &[Tool] = &[
         name: "Claude Code",
         config: &[".claude/settings.json", ".claude.json"],
         cli: "claude",
-        route: "set ANTHROPIC_BASE_URL to the anthropic port",
+        route: "run `mtop setup`, or `mtop run -- claude`",
         provider: "anthropic",
     },
     Tool {
         name: "Codex",
         config: &[".codex/config.toml"],
         cli: "codex",
-        route: "set the base URL in ~/.codex/config.toml to the openai port",
+        route: "run `mtop setup`",
         provider: "openai",
     },
     Tool {
         name: "Ollama",
         config: &[".ollama"],
         cli: "ollama",
-        route: "point the client at the ollama port, or set OLLAMA_HOST",
+        route: "run `mtop run -- <your ollama client>`",
         provider: "ollama",
     },
     Tool {
@@ -65,7 +65,7 @@ const TOOLS: &[Tool] = &[
         name: "Cursor",
         config: &[".cursor"],
         cli: "cursor-agent",
-        route: "set the OpenAI base URL in Cursor settings",
+        route: "talks to Cursor's own backend; not observable locally",
         provider: "openai",
     },
     Tool {
@@ -79,7 +79,7 @@ const TOOLS: &[Tool] = &[
         name: "Gemini CLI",
         config: &[".gemini"],
         cli: "gemini",
-        route: "no Gemini parser yet; traffic would forward but not be parsed",
+        route: "run `mtop setup`",
         provider: "",
     },
     Tool {
@@ -119,11 +119,11 @@ const PROVIDERS: &[Provider] = &[
     Provider {
         keys: &["GEMINI_API_KEY", "GOOGLE_API_KEY"],
         upstream: None,
-        note: "no Gemini parser yet",
+        note: "no Gemini parser on the proxy; Gemini CLI reports through `mtop setup`",
     },
 ];
 
-fn home() -> Option<PathBuf> {
+pub fn home() -> Option<PathBuf> {
     env::var_os("HOME")
         .or_else(|| env::var_os("USERPROFILE"))
         .map(PathBuf::from)
@@ -161,9 +161,108 @@ fn keys_set(keys: &[&'static str]) -> Vec<&'static str> {
         .collect()
 }
 
+/// Versions, policies and settings a user would want on screen. Versions come
+/// from `<cli> --version`. Settings come from named keys in the tools' own
+/// settings files; no other key is read and nothing found here is printed
+/// beyond these labels.
+pub fn environment() -> Vec<(String, String)> {
+    let mut out = vec![];
+    for (name, cli) in [
+        ("Claude Code", "claude"),
+        ("Codex", "codex"),
+        ("Gemini CLI", "gemini"),
+        ("Ollama", "ollama"),
+    ] {
+        if !on_path(cli) {
+            continue;
+        }
+        let version = Command::new(cli)
+            .arg("--version")
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| {
+                // Ollama prints its version on stderr behind a connection
+                // warning; keep the last line that names a version.
+                let text = format!(
+                    "{}\n{}",
+                    String::from_utf8_lossy(&o.stdout),
+                    String::from_utf8_lossy(&o.stderr)
+                );
+                text.lines()
+                    .rfind(|l| {
+                        l.chars().any(|c| c.is_ascii_digit())
+                            && !l.starts_with("Warning: could not")
+                    })
+                    .map(|l| {
+                        l.trim()
+                            .trim_start_matches("Warning: client version is ")
+                            .to_string()
+                    })
+            })
+            .unwrap_or_else(|| "unknown".into());
+        out.push((format!("{name} version"), version));
+    }
+    let Some(home) = home() else {
+        return out;
+    };
+    let json = |path: PathBuf| -> Option<serde_json::Value> {
+        serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
+    };
+    if let Some(v) = json(home.join(".claude").join("settings.json")) {
+        for (key, label) in [
+            ("model", "Claude Code model"),
+            ("effortLevel", "Claude Code effort"),
+        ] {
+            if let Some(value) = v[key].as_str() {
+                out.push((label.into(), value.into()));
+            }
+        }
+        let env = &v["env"];
+        let on = env["CLAUDE_CODE_ENABLE_TELEMETRY"].as_str() == Some("1");
+        let endpoint = env["OTEL_EXPORTER_OTLP_ENDPOINT"].as_str().unwrap_or("");
+        out.push((
+            "Claude Code telemetry".into(),
+            if on && !endpoint.is_empty() {
+                format!("on, {endpoint}")
+            } else if on {
+                "on, default endpoint".into()
+            } else {
+                "off (run `mtop setup`)".into()
+            },
+        ));
+    }
+    if let Ok(toml) = std::fs::read_to_string(home.join(".codex").join("config.toml")) {
+        out.push((
+            "Codex telemetry".into(),
+            if toml.contains("# mtop-begin") {
+                "on, mtop block".into()
+            } else if toml.contains("[otel]") {
+                "configured outside mtop".into()
+            } else {
+                "off (run `mtop setup`)".into()
+            },
+        ));
+    }
+    if let Some(v) = json(home.join(".gemini").join("settings.json")) {
+        let t = &v["telemetry"];
+        out.push((
+            "Gemini CLI telemetry".into(),
+            match (t["enabled"].as_bool(), t["otlpEndpoint"].as_str()) {
+                (Some(true), Some(e)) => format!("on, {e}"),
+                (Some(true), None) => "on, default endpoint".into(),
+                _ => "off (run `mtop setup`)".into(),
+            },
+        ));
+    }
+    out
+}
+
 /// One line per finding, plus the upstream arguments the findings imply.
 pub struct Report {
     pub tools: Vec<String>,
+    /// (name, route) for every tool found, for the dashboard's sources panel.
+    pub found: Vec<(&'static str, &'static str)>,
     pub providers: Vec<String>,
     pub upstreams: Vec<&'static str>,
 }
@@ -171,6 +270,7 @@ pub struct Report {
 pub fn scan() -> Report {
     let home = home();
     let mut tools = vec![];
+    let mut found_tools = vec![];
     let mut tool_upstreams: Vec<&'static str> = vec![];
     for tool in TOOLS {
         let found: Vec<&str> = home
@@ -191,6 +291,7 @@ pub fn scan() -> Report {
         if cli {
             evidence.push(format!("{} on PATH", tool.cli));
         }
+        found_tools.push((tool.name, tool.route));
         tools.push(format!(
             "{:<12} {}\n             {}",
             tool.name,
@@ -229,6 +330,7 @@ pub fn scan() -> Report {
 
     Report {
         tools,
+        found: found_tools,
         providers,
         upstreams,
     }
@@ -265,6 +367,14 @@ impl Report {
             println!("Provider keys set:");
             for p in &self.providers {
                 println!("  {p}");
+            }
+            println!();
+        }
+        let env = environment();
+        if !env.is_empty() {
+            println!("Environment:");
+            for (k, v) in &env {
+                println!("  {k:<28} {v}");
             }
             println!();
         }
@@ -309,6 +419,7 @@ mod tests {
     fn builds_a_command_only_from_observable_providers() {
         let report = Report {
             tools: vec![],
+            found: vec![],
             providers: vec![],
             upstreams: vec!["openai=https://api.openai.com"],
         };
@@ -318,6 +429,7 @@ mod tests {
         // Nothing observable means no command to suggest, not an empty one.
         let empty = Report {
             tools: vec![],
+            found: vec![],
             providers: vec![],
             upstreams: vec![],
         };

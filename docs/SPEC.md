@@ -1,10 +1,11 @@
-# MTop system design specification — implementation revision
+# MTop system design specification
 
 ## 1. System overview and core objectives
 
 MTop is a Rust terminal observability application. v0.1 runs without privileged capture on macOS and Linux.
-Its two ingestion modes are independent: polling for backend health, and an explicitly configured streaming
-HTTP reverse proxy for request telemetry. Universal zero-configuration capture is a research objective, not a product guarantee.
+Its ingestion modes are independent: polling for backend health, transcripts the coding agents already write,
+each tool's own OpenTelemetry export, and an explicitly configured streaming HTTP reverse proxy. Universal
+zero-configuration network capture is a research objective, not a product guarantee.
 
 Rust provides memory-safe parsing and shared state, Tokio handles concurrent network I/O, Axum serves the proxy,
 Reqwest/Rustls forwards HTTP requests, and Ratatui/Crossterm renders the interface. Cargo.lock fixes resolved dependencies.
@@ -23,6 +24,8 @@ There is no raw-payload event queue. A short-held mutex serializes store updates
 | Ollama `/api/ps` | Loaded model names, `size_vram` | No per-request token usage or queue inference |
 | vLLM `/metrics` | Running/waiting gauges, cache fraction | Aggregate running/waiting across labels; maximum cache fraction |
 | Explicit HTTP proxy | Request ID, model, streamed usage, visible-text timing, tool-call count | Only traffic routed through this listener; no PID or session inference |
+| Transcript tail (`~/.claude/projects`, `~/.codex/sessions`) | Model, token usage, tool count, turn time from line stamps | Read-only; no prompt text retained; files idle over an hour start at their end |
+| OTLP/HTTP JSON receiver (`mtop setup`) | `claude_code.api_request`, `codex.sse_event`, `gemini_cli.api_response`: model, tokens, duration, cost when the tool sends it | Loopback only; only numeric fields and the model name are read; metrics and traces discarded |
 | Future Linux eBPF collector | Candidate TLS/HTTP observations | Separate privileged helper, supported-runtime matrix, loss accounting and explicit capture scope required |
 
 The proxy fixes a single upstream origin and binds only to loopback. Authentication headers are forwarded.
@@ -102,13 +105,12 @@ Shutdown terminates in-flight proxy connections. Upstream requests have a 600-se
 deadline and a 5-second upstream connect timeout. Remote use should employ HTTPS; local HTTP is useful for inference servers.
 Future payload inspection requires capture scoping and redaction before retention, not a UI-only hide toggle.
 
-## 8. Implementation sequence
+## 8. Roadmap
 
-1. v0.1: delivered Rust vertical slice described above, tested locally with mock services.
-2. Validate on the user's Mac with Ollama and actual client base-URL settings; exercise cancellation, concurrency and proxy lifecycle.
-3. Complete provider fixtures, particularly Responses, Gemini and tool events; add explicit trace ingestion with parent/span IDs.
-4. Add configurable limits, richer status/latency display, configurable model context/pricing metadata and benchmark harness.
-5. Prototype passive Linux capture behind a separate optional collector, initially for a documented TLS/runtime combination.
+1. Delivered: pollers, proxy, transcript tail, OTLP receiver, `setup`, history, five-target releases and installers.
+2. Provider fixtures for OpenAI Responses and tool events; explicit trace ingestion with parent and span IDs.
+3. A bundled price table with a documented source and date, so cost is known without `--prices`.
+4. Passive Linux capture behind a separate optional collector, for one documented TLS and runtime combination.
 
 ## Technical references
 

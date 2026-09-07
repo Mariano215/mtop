@@ -2,9 +2,9 @@ use clap::{Parser, Subcommand};
 use mtop::{
     history,
     model::{Backend, Price, RequestMetric, Store, Usage},
-    poller,
+    otlp, poller,
     proxy::{Proxy, Timeouts},
-    scan, ui,
+    scan, setup, tail, ui,
 };
 use std::{io::IsTerminal, net::SocketAddr, path::PathBuf, time::Duration};
 
@@ -53,6 +53,15 @@ struct Args {
     ollama: String,
     #[arg(long)]
     no_ollama: bool,
+    /// Do not read Claude Code or Codex transcripts from the home directory.
+    #[arg(long)]
+    no_tail: bool,
+    /// OpenTelemetry receiver address for tools set up with `mtop setup`. Must be loopback.
+    #[arg(long, default_value = "127.0.0.1:4318", global = true)]
+    otlp: SocketAddr,
+    /// Do not start the OpenTelemetry receiver.
+    #[arg(long)]
+    no_otlp: bool,
     #[arg(long)]
     vllm: Option<String>,
     /// Upstream to observe. Repeat for several. Either a bare URL, which uses
@@ -105,6 +114,16 @@ enum Command {
         #[arg(trailing_var_arg = true, required = true)]
         argv: Vec<String>,
     },
+    /// Turn on Claude Code, Codex and Gemini CLI telemetry export, pointed at
+    /// MTop's --otlp address. Shows each change and asks before writing.
+    Setup {
+        /// Undo what `setup` wrote.
+        #[arg(long)]
+        remove: bool,
+        /// Write without asking.
+        #[arg(long, short)]
+        yes: bool,
+    },
 }
 
 /// Bind one loopback listener per upstream, counting up from `listen`.
@@ -141,6 +160,18 @@ async fn start_proxies(
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    if let Some(Command::Setup { remove, yes }) = &args.command {
+        anyhow::ensure!(
+            args.otlp.ip().is_loopback(),
+            "--otlp must be a loopback address"
+        );
+        setup::apply(setup::plan(args.otlp, *remove)?, *yes)?;
+        println!(
+            "\nRun `mtop` and start the tool in another terminal; it reports to http://{}",
+            args.otlp
+        );
+        return Ok(());
+    }
     if let Some(Command::Scan) = args.command {
         scan::scan().print();
         return Ok(());
@@ -255,6 +286,16 @@ async fn main() -> anyhow::Result<()> {
         );
         std::process::exit(status.code().unwrap_or(1));
     }
+    if !args.demo {
+        // Every tool found gets a line. The tailer overwrites the ones it reads.
+        let mut s = store.lock().unwrap();
+        for (name, route) in scan::scan().found {
+            s.source(name, format!("installed; {route}"));
+        }
+        for (k, v) in scan::environment() {
+            s.environment(&k, &v);
+        }
+    }
     if args.demo {
         let mut s = store.lock().unwrap();
         s.backends.push(Backend {
@@ -298,6 +339,9 @@ async fn main() -> anyhow::Result<()> {
                 });
             store.lock().unwrap().backend(rows, source);
         }
+        if !args.no_tail {
+            tail::poll_all(&mut tail::Tailer::default(), &store);
+        }
     } else {
         anyhow::ensure!(
             std::io::stdout().is_terminal(),
@@ -308,6 +352,33 @@ async fn main() -> anyhow::Result<()> {
         }
         if let Some(base) = args.vllm {
             tokio::spawn(poller::run(store.clone(), "vllm", base));
+        }
+        if !args.no_tail {
+            tokio::spawn(tail::run(store.clone()));
+        }
+        if !args.no_otlp {
+            anyhow::ensure!(
+                args.otlp.ip().is_loopback(),
+                "--otlp must be a loopback address"
+            );
+            // A second mtop must not die because the first holds the port.
+            match tokio::net::TcpListener::bind(args.otlp).await {
+                Ok(listener) => {
+                    store.lock().unwrap().listeners.push(format!(
+                        "telemetry receiver http://{} (mtop setup)",
+                        args.otlp
+                    ));
+                    let router = otlp::Receiver::new(store.clone(), prices.clone()).router();
+                    tokio::spawn(async move {
+                        let _ = axum::serve(listener, router).await;
+                    });
+                }
+                Err(e) => store
+                    .lock()
+                    .unwrap()
+                    .listeners
+                    .push(format!("telemetry receiver {} not started: {e}", args.otlp)),
+            }
         }
     }
     if args.once {
