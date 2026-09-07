@@ -36,12 +36,18 @@ pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool)
         },
         if paused { " • FROZEN" } else { "" }
     );
+    // A zero nobody measured is not a number; say unavailable instead.
+    let nothing_priced = s.completed > 0 && s.unpriced == s.completed;
     let mut lines: Vec<Line> = vec![Line::raw(format!(
-        "Completed {}  |  Priced estimate ${:.6}  |  Unpriced {}{}  |  Evicted {}",
+        "Completed {}  |  Priced estimate {}  |  Unpriced {}{}  |  Evicted {}",
         s.completed,
-        s.known_cost_usd,
+        if nothing_priced {
+            "—".to_string()
+        } else {
+            format!("${:.6}", s.known_cost_usd)
+        },
         s.unpriced,
-        if s.completed > 0 && s.unpriced == s.completed {
+        if nothing_priced {
             " (no --prices given)"
         } else {
             ""

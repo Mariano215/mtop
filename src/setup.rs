@@ -224,7 +224,8 @@ pub fn apply(steps: Vec<Step>, yes: bool) -> Result<()> {
         if let Some(parent) = step.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        if step.path.exists() {
+        let existed = step.path.exists();
+        if existed {
             let backup = step.path.with_extension(format!(
                 "{}.mtop.bak",
                 step.path.extension().and_then(|e| e.to_str()).unwrap_or("")
@@ -233,6 +234,13 @@ pub fn apply(steps: Vec<Step>, yes: bool) -> Result<()> {
             println!("{:<12} backup {}", step.tool, backup.display());
         }
         std::fs::write(&step.path, next)?;
+        // A file created here sits beside credentials: owner-only, like the
+        // tools themselves create it. An existing file keeps its own bits.
+        #[cfg(unix)]
+        if !existed {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&step.path, std::fs::Permissions::from_mode(0o600))?;
+        }
         println!("{:<12} written {}", step.tool, step.path.display());
     }
     Ok(())

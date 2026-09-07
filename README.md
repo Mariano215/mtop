@@ -70,9 +70,16 @@ PATH, then:
 
 ```sh
 mtop --demo   # synthetic data, no network, to see the screen
-mtop          # live: every tool found on this machine, and its calls
+mtop scan     # what is on this machine, and the exact command that observes each tool
 mtop setup    # one confirmed step to turn on Claude Code, Codex and Gemini CLI telemetry
+mtop          # live: every tool found, colored by state, and its calls as they happen
 ```
+
+The request table fills from three sources: transcripts Claude Code and
+Codex already wrote (immediately, if any are less than an hour old),
+telemetry from tools you ran `setup` for (from their next call), and anything
+you route through `mtop run`. On a machine with none of those yet, the header
+still lists every tool found and the step that would observe it.
 
 Every `cargo run --locked --` example below is the same as `mtop` with the
 binary installed.
@@ -185,6 +192,10 @@ appends a `token_count` event per turn under `~/.codex/sessions/`. A plain
 so a session started in any other terminal appears with no routing and no
 configuration, whether you logged in with a subscription or a key.
 Transcripts idle for more than an hour are skipped until they grow again.
+For these rows `Dur ms` is turn time: the usage line's own timestamp minus
+the timestamp of the last input line before it (a user turn or a tool
+result). It is wall clock from the transcript, not a number the API sent, and
+it stays `—` when either stamp is missing. TTFT is unavailable for them.
 
 The dashboard header lists every tool `scan` found and what MTop is doing
 about it: `watching` with a count of transcripts written to in the last two

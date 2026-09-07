@@ -64,6 +64,45 @@ struct FileState {
     offset: u64,
     /// Codex names the model on a turn line, not on the usage line.
     model: String,
+    /// Stamp of the last line that was input to the model (a user turn or a
+    /// tool result). The next usage line's stamp minus this is the turn time.
+    input_ms: Option<i64>,
+    /// Stamp of the last usage line seen, so a streamed reply that spans
+    /// several lines measures from its input, not from its own first line.
+    last_output_ms: Option<i64>,
+}
+
+/// Milliseconds since the Unix epoch for an RFC 3339 UTC stamp like
+/// `2026-09-07T22:06:38.324Z`. Anything else is None. No calendar crate:
+/// the civil-date arithmetic is a dozen lines and never wrong for UTC.
+fn epoch_ms(stamp: &str) -> Option<i64> {
+    let s = stamp.strip_suffix('Z')?;
+    let (date, time) = s.split_once('T')?;
+    let mut d = date.split('-').map(|x| x.parse::<i64>().ok());
+    let (y, m, day) = (d.next()??, d.next()??, d.next()??);
+    let (hms, frac) = time.split_once('.').unwrap_or((time, ""));
+    let mut t = hms.split(':').map(|x| x.parse::<i64>().ok());
+    let (h, mi, sec) = (t.next()??, t.next()??, t.next()??);
+    let ms: i64 = format!("{:0<3}", frac.chars().take(3).collect::<String>())
+        .parse()
+        .ok()?;
+    // Days from civil, Howard Hinnant's algorithm.
+    let (y, m) = if m <= 2 { (y - 1, m + 12) } else { (y, m) };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (m - 3) + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some((((days * 24 + h) * 60 + mi) * 60 + sec) * 1000 + ms)
+}
+
+/// Turn time for a usage line stamped `now`: measured from the last input
+/// line, and shared by every usage line of the same streamed reply.
+fn turn_ms(state: &mut FileState, now: Option<i64>) -> Option<f64> {
+    let now = now?;
+    let start = state.input_ms?;
+    state.last_output_ms = Some(now);
+    (now >= start).then_some((now - start) as f64)
 }
 
 #[derive(Default)]
@@ -104,7 +143,7 @@ impl Tailer {
             } else {
                 len
             },
-            model: String::new(),
+            ..Default::default()
         });
         // Truncation or rotation: start over rather than read from the middle.
         if state.offset > len {
@@ -175,11 +214,17 @@ fn id_for(key: &impl Hash) -> u64 {
 }
 
 /// One Claude Code assistant line, or `None` for every other line shape.
-fn parse_claude(line: &str, _: &Path, _: &mut FileState) -> Option<RequestMetric> {
+fn parse_claude(line: &str, _: &Path, state: &mut FileState) -> Option<RequestMetric> {
     let v: Value = serde_json::from_str(line).ok()?;
+    let stamp = v["timestamp"].as_str().and_then(epoch_ms);
     if v["type"].as_str()? != "assistant" {
+        // A user turn or a tool result: the model starts on it next.
+        if v["type"] == "user" && stamp.is_some() {
+            state.input_ms = stamp;
+        }
         return None;
     }
+    let duration_ms = turn_ms(state, stamp);
     let message = &v["message"];
     let usage = &message["usage"];
     // No usage object means no numbers to report, so there is nothing to show.
@@ -212,6 +257,7 @@ fn parse_claude(line: &str, _: &Path, _: &mut FileState) -> Option<RequestMetric
             cache_write: usage["cache_creation_input_tokens"].as_u64(),
         },
         tool_calls,
+        duration_ms,
         ..Default::default()
     })
 }
@@ -220,14 +266,26 @@ fn parse_claude(line: &str, _: &Path, _: &mut FileState) -> Option<RequestMetric
 fn parse_codex(line: &str, path: &Path, state: &mut FileState) -> Option<RequestMetric> {
     let v: Value = serde_json::from_str(line).ok()?;
     let payload = &v["payload"];
+    let stamp = v["timestamp"].as_str().and_then(epoch_ms);
     if let Some(model) = payload["model"].as_str() {
         state.model = safe_label(model);
     }
-    if payload["type"].as_str()? != "token_count" {
+    let kind = payload["type"].as_str()?;
+    if kind != "token_count" {
+        // The lines that feed the model: a turn start, a user message or a
+        // tool result. The next usage line measures from the latest of them.
+        if matches!(
+            kind,
+            "turn_context" | "user_message" | "function_call_output" | "custom_tool_call_output"
+        ) || v["type"] == "turn_context"
+        {
+            state.input_ms = stamp.or(state.input_ms);
+        }
         return None;
     }
     let last = &payload["info"]["last_token_usage"];
     let input = last["input_tokens"].as_u64()?;
+    let duration_ms = turn_ms(state, stamp);
     // Codex reports cached tokens as a subset of input, like the OpenAI API.
     Some(RequestMetric {
         id: id_for(&(path, v["timestamp"].as_str().unwrap_or_default())),
@@ -244,6 +302,7 @@ fn parse_codex(line: &str, path: &Path, state: &mut FileState) -> Option<Request
             cache_read: last["cached_input_tokens"].as_u64(),
             cache_write: None,
         },
+        duration_ms,
         ..Default::default()
     })
 }
@@ -303,6 +362,47 @@ mod tests {
             parse_claude(r#"{"type":"assistant","message":{"usage":{}}}"#, p, &mut st).is_none()
         );
         assert!(parse_claude("not json", p, &mut st).is_none());
+    }
+
+    #[test]
+    fn epoch_ms_parses_utc_stamps_only() {
+        assert_eq!(epoch_ms("1970-01-01T00:00:01.5Z"), Some(1500));
+        assert_eq!(
+            epoch_ms("2026-09-07T22:06:38.324Z"),
+            Some(1_788_818_798_324)
+        );
+        assert_eq!(epoch_ms("2026-09-07T22:06:38Z"), Some(1_788_818_798_000));
+        assert!(epoch_ms("2026-09-07T22:06:38+02:00").is_none());
+        assert!(epoch_ms("t1").is_none());
+    }
+
+    #[test]
+    fn turn_time_runs_from_the_last_input_line() {
+        let mut st = FileState::default();
+        let p = Path::new("x");
+        let user = r#"{"type":"user","timestamp":"2026-01-01T00:00:00.000Z","message":{}}"#;
+        assert!(parse_claude(user, p, &mut st).is_none());
+        let reply = LINE.replacen(
+            r#"{"type":"assistant","#,
+            r#"{"type":"assistant","timestamp":"2026-01-01T00:00:02.250Z","#,
+            1,
+        );
+        assert_eq!(
+            parse_claude(&reply, p, &mut st).unwrap().duration_ms,
+            Some(2250.)
+        );
+        // Same reply, later line: still measured from the user line.
+        let later = reply.replace("00:00:02.250Z", "00:00:03.000Z");
+        assert_eq!(
+            parse_claude(&later, p, &mut st).unwrap().duration_ms,
+            Some(3000.)
+        );
+        // No stamp on the input line: no number, never a guess.
+        let mut fresh = FileState::default();
+        assert_eq!(
+            parse_claude(&reply, p, &mut fresh).unwrap().duration_ms,
+            None
+        );
     }
 
     #[test]
