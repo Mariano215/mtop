@@ -197,6 +197,10 @@ the timestamp of the last input line before it (a user turn or a tool
 result). It is wall clock from the transcript, not a number the API sent, and
 it stays `—` when either stamp is missing. TTFT is unavailable for them.
 
+The request table shows only columns some visible row can fill: `TTFT ms`
+appears once a proxied or telemetry request reports it, `Est. USD` once a
+request is priced, `Parse` once a parse error has occurred.
+
 The dashboard header lists every tool `scan` found and what MTop is doing
 about it: `watching` with a count of transcripts written to in the last two
 minutes, or `installed` with the routing step that would observe it.

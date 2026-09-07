@@ -1,4 +1,4 @@
-use crate::model::{Shared, Store};
+use crate::model::{RequestMetric, Shared, Store};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::{
     Frame,
@@ -8,6 +8,10 @@ use ratatui::{
     widgets::{Block, Paragraph, Row, Table, TableState},
 };
 use std::time::Duration;
+
+/// One request-table column: header, width, and how a row fills it.
+type Cell = Box<dyn Fn(&RequestMetric) -> String>;
+type Column = (&'static str, Constraint, Cell);
 
 fn number(n: Option<u64>) -> String {
     n.map(|n| n.to_string()).unwrap_or_else(|| "—".into())
@@ -148,60 +152,107 @@ pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool)
         ),
         areas[1],
     );
+    // A column that is "—" on every row is not information. Columns whose
+    // source only some providers report (TTFT, Parse) or that need a price
+    // table (Est. USD) appear only once some row can fill them.
+    let has_ttft = s.requests.iter().any(|r| r.ttft_ms.is_some());
+    let has_cost = s.requests.iter().any(|r| r.estimated_cost_usd.is_some());
+    let has_parse = s.requests.iter().any(|r| r.parse_errors > 0);
+    let mut columns: Vec<Column> = vec![
+        (
+            "Provider",
+            Constraint::Length(12),
+            Box::new(|r| r.provider.clone()),
+        ),
+        ("Model", Constraint::Min(15), Box::new(|r| r.model.clone())),
+        (
+            "Status",
+            Constraint::Length(10),
+            Box::new(|r| r.status.clone()),
+        ),
+    ];
+    if has_ttft {
+        columns.push((
+            "TTFT ms",
+            Constraint::Length(8),
+            Box::new(|r| decimal(r.ttft_ms)),
+        ));
+    }
+    columns.extend([
+        (
+            "Dur ms",
+            Constraint::Length(8),
+            Box::new(|r: &RequestMetric| decimal(r.duration_ms))
+                as Box<dyn Fn(&RequestMetric) -> String>,
+        ),
+        (
+            "Input",
+            Constraint::Length(8),
+            Box::new(|r| number(r.usage.input)),
+        ),
+        (
+            "Cache",
+            Constraint::Length(8),
+            Box::new(|r| {
+                number(match (r.usage.cache_read, r.usage.cache_write) {
+                    (None, None) => None,
+                    (a, b) => Some(a.unwrap_or(0) + b.unwrap_or(0)),
+                })
+            }),
+        ),
+        (
+            "Output",
+            Constraint::Length(8),
+            Box::new(|r| number(r.usage.output)),
+        ),
+        (
+            "Tools",
+            Constraint::Length(5),
+            Box::new(|r| r.tool_calls.to_string()),
+        ),
+    ]);
+    if has_cost {
+        columns.push((
+            "Est. USD",
+            Constraint::Length(9),
+            Box::new(|r| {
+                r.estimated_cost_usd
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_else(|| "—".into())
+            }),
+        ));
+    }
+    if has_parse {
+        columns.push((
+            "Parse",
+            Constraint::Length(5),
+            Box::new(|r| r.parse_errors.to_string()),
+        ));
+    }
     let rows: Vec<Row> = s
         .requests
         .iter()
         .rev()
         .map(|r| {
-            Row::new(vec![
-                r.provider.clone(),
-                r.model.clone(),
-                r.status.clone(),
-                decimal(r.ttft_ms),
-                decimal(r.duration_ms),
-                number(r.usage.input),
-                number(match (r.usage.cache_read, r.usage.cache_write) {
-                    (None, None) => None,
-                    (a, b) => Some(a.unwrap_or(0) + b.unwrap_or(0)),
-                }),
-                number(r.usage.output),
-                r.tool_calls.to_string(),
-                r.estimated_cost_usd
-                    .map(|v| format!("{v:.6}"))
-                    .unwrap_or_else(|| "—".into()),
-                r.parse_errors.to_string(),
-            ])
+            Row::new(
+                columns
+                    .iter()
+                    .map(|(_, _, cell)| cell(r))
+                    .collect::<Vec<_>>(),
+            )
         })
         .collect();
     let mut state = TableState::default().with_selected(Some(selected));
     f.render_stateful_widget(
-        Table::new(
-            rows,
-            [
-                Constraint::Length(12),
-                Constraint::Min(15),
-                Constraint::Length(10),
-                Constraint::Length(8),
-                Constraint::Length(8),
-                Constraint::Length(8),
-                Constraint::Length(8),
-                Constraint::Length(8),
-                Constraint::Length(5),
-                Constraint::Length(9),
-                Constraint::Length(5),
-            ],
-        )
-        .header(
-            Row::new([
-                "Provider", "Model", "Status", "TTFT ms", "Dur ms", "Input", "Cache", "Output",
-                "Tools", "Est. USD", "Parse",
-            ])
-            .style(Style::default().fg(Color::Cyan)),
-        )
-        .row_highlight_style(Style::default().bg(Color::DarkGray))
-        .block(Block::bordered().title(
-            " Observed requests • Cache = tokens read from or written to prompt cache • — means unavailable ",
-        )),
+        Table::new(rows, columns.iter().map(|(_, w, _)| *w).collect::<Vec<_>>())
+            .header(
+                Row::new(columns.iter().map(|(name, _, _)| *name).collect::<Vec<_>>())
+                    .style(Style::default().fg(Color::Cyan)),
+            )
+            .row_highlight_style(Style::default().bg(Color::DarkGray))
+            .block(Block::bordered().title(
+                " Observed requests • Cache = tokens read from or written to prompt cache • — means unavailable ",
+            )),
         areas[2],
         &mut state,
     );
