@@ -130,6 +130,7 @@ fn home() -> Option<PathBuf> {
 }
 
 /// Whether `command` resolves to an existing file on PATH.
+/// Windows stores executables with an extension, so each PATHEXT suffix is tried too.
 fn on_path(command: &str) -> bool {
     if command.is_empty() {
         return false;
@@ -137,7 +138,19 @@ fn on_path(command: &str) -> bool {
     let Some(path) = env::var_os("PATH") else {
         return false;
     };
-    env::split_paths(&path).any(|dir| dir.join(command).exists())
+    let suffixes: Vec<String> = if cfg!(windows) {
+        let pathext = env::var("PATHEXT").unwrap_or_else(|_| ".EXE;.CMD;.BAT".into());
+        std::iter::once(String::new())
+            .chain(pathext.split(';').map(str::to_ascii_lowercase))
+            .collect()
+    } else {
+        vec![String::new()]
+    };
+    env::split_paths(&path).any(|dir| {
+        suffixes
+            .iter()
+            .any(|suffix| dir.join(format!("{command}{suffix}")).exists())
+    })
 }
 
 /// Which of `keys` are set to a non-empty value. Values are never read.

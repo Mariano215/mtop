@@ -19,7 +19,14 @@
 A Rust terminal console for local model telemetry and opt-in API request observation.
 **v0.1 is a tested starter implementation, not a universal passive AI monitor.**
 
-## Start on your Mac
+## Install
+
+Prebuilt binaries for Linux (x86_64, aarch64), macOS (arm64, x86_64) and
+Windows (x86_64) are attached to each
+[release](https://github.com/Mariano215/mtop/releases), each with a SHA-256
+file. On Arch, build from `packaging/aur/PKGBUILD`.
+
+## Build from source
 
 Install the stable Rust toolchain using [rustup](https://rustup.rs/) if needed, then:
 
