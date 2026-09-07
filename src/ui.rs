@@ -20,7 +20,48 @@ fn decimal(n: Option<f64>) -> String {
     n.map(|n| format!("{n:.1}")).unwrap_or_else(|| "—".into())
 }
 
-pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool) {
+/// Row order for the request table. `s` cycles it.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub enum Sort {
+    /// Arrival order, newest first: the live-log view.
+    #[default]
+    Newest,
+    /// Longest turn first: what is slow right now.
+    Slowest,
+    /// Most tokens first: what is expensive right now.
+    Biggest,
+}
+
+impl Sort {
+    fn next(self) -> Self {
+        match self {
+            Sort::Newest => Sort::Slowest,
+            Sort::Slowest => Sort::Biggest,
+            Sort::Biggest => Sort::Newest,
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Sort::Newest => "newest",
+            Sort::Slowest => "slowest",
+            Sort::Biggest => "biggest",
+        }
+    }
+}
+
+fn tokens(r: &RequestMetric) -> u64 {
+    [
+        r.usage.input,
+        r.usage.output,
+        r.usage.cache_read,
+        r.usage.cache_write,
+    ]
+    .iter()
+    .flatten()
+    .sum()
+}
+
+pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool, sort: Sort) {
     // One extra line per proxy listener, so the ports stay on screen while you configure a client.
     let listener_lines = s.listeners.len().min(4) as u16;
     let source_lines = s.sources.len().min(8) as u16 + u16::from(!s.telemetry.is_empty());
@@ -242,10 +283,18 @@ pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool)
             Box::new(|r| r.parse_errors.to_string()),
         ));
     }
-    let rows: Vec<Row> = s
-        .requests
-        .iter()
-        .rev()
+    let mut ordered: Vec<&RequestMetric> = s.requests.iter().rev().collect();
+    match sort {
+        Sort::Newest => (),
+        Sort::Slowest => ordered.sort_by(|a, b| {
+            b.duration_ms
+                .unwrap_or(-1.)
+                .total_cmp(&a.duration_ms.unwrap_or(-1.))
+        }),
+        Sort::Biggest => ordered.sort_by_key(|r| std::cmp::Reverse(tokens(r))),
+    }
+    let rows: Vec<Row> = ordered
+        .into_iter()
         .map(|r| {
             Row::new(
                 columns
@@ -263,13 +312,14 @@ pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool)
                     .style(Style::default().fg(Color::Cyan)),
             )
             .row_highlight_style(Style::default().bg(Color::DarkGray))
-            .block(Block::bordered().title(
-                " Observed requests • Cache = tokens read from or written to prompt cache • — means unavailable ",
-            )),
+            .block(Block::bordered().title(format!(
+                " Observed requests • sort: {} • Cache = tokens read from or written to prompt cache • — means unavailable ",
+                sort.label()
+            ))),
         areas[2],
         &mut state,
     );
-    f.render_widget(Paragraph::new("↑/↓ or j/k select • Space freeze display • q/Esc quit • No prompts, credentials or tool arguments retained")
+    f.render_widget(Paragraph::new("↑/↓ or j/k select • s sort newest/slowest/biggest • Space freeze display • q/Esc quit • No prompts, credentials or tool arguments retained")
         .block(Block::bordered()), areas[3]);
 }
 
@@ -277,6 +327,7 @@ pub fn run(store: Shared, demo: bool) -> anyhow::Result<()> {
     let mut terminal = ratatui::init();
     let result = (|| -> anyhow::Result<()> {
         let mut paused = false;
+        let mut sort = Sort::default();
         let mut selected = 0usize;
         let mut snapshot = store.lock().unwrap().clone();
         loop {
@@ -284,7 +335,7 @@ pub fn run(store: Shared, demo: bool) -> anyhow::Result<()> {
                 snapshot = store.lock().unwrap().clone();
             }
             selected = selected.min(snapshot.requests.len().saturating_sub(1));
-            terminal.draw(|f| draw(f, &snapshot, selected, paused, demo))?;
+            terminal.draw(|f| draw(f, &snapshot, selected, paused, demo, sort))?;
             if event::poll(Duration::from_millis(100))?
                 && let Event::Key(key) = event::read()?
             {
@@ -297,6 +348,7 @@ pub fn run(store: Shared, demo: bool) -> anyhow::Result<()> {
                         break;
                     }
                     KeyCode::Char(' ') => paused = !paused,
+                    KeyCode::Char('s') => sort = sort.next(),
                     KeyCode::Down | KeyCode::Char('j') => selected = selected.saturating_add(1),
                     KeyCode::Up | KeyCode::Char('k') => selected = selected.saturating_sub(1),
                     _ => (),
@@ -317,8 +369,10 @@ mod tests {
         for (w, h) in [(40, 10), (120, 30)] {
             let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(w, h)).unwrap();
             let s = Store::shared(10);
-            t.draw(|f| draw(f, &s.lock().unwrap(), 0, false, true))
-                .unwrap();
+            for sort in [Sort::Newest, Sort::Slowest, Sort::Biggest] {
+                t.draw(|f| draw(f, &s.lock().unwrap(), 0, false, true, sort))
+                    .unwrap();
+            }
         }
     }
 }

@@ -67,9 +67,9 @@ Cursor and Gemini CLI installed and no price table:
 
 ```text
 ┌ MTop 0.1 • LIVE / METRICS ONLY ──────────────────────────────────────────────────────────────────────────────────────┐
-│Completed 434  |  Priced estimate —  |  Unpriced 434 (no --prices given)  |  Evicted 0                                │
+│Completed 442  |  Priced estimate —  |  Unpriced 442 (no --prices given)  |  Evicted 0                                │
 │telemetry receiver http://127.0.0.1:4318 (mtop setup)                                                                 │
-│Claude Code  watching ~/.claude/projects, 9 active                                                                    │
+│Claude Code  watching ~/.claude/projects, 8 active                                                                    │
 │Codex        watching ~/.codex/sessions, 0 active                                                                     │
 │Ollama       installed; run `mtop run -- <your ollama client>`                                                        │
 │Continue     installed; set apiBase per model in ~/.continue/config.json                                              │
@@ -83,7 +83,7 @@ Cursor and Gemini CLI installed and no price table:
 │                                                                                                                      │
 │                                                                                                                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-┌ Observed requests • Cache = tokens read from or written to prompt cache • — means unavailable ───��───────────────────
+┌ Observed requests • sort: newest • Cache = tokens read from or written to prompt cache • — means unavailable ────────┐
 │Provider     Model                     Status     Dur ms   Input    Cache    Output   Tools                           │
 │claude-code  claude-opus-4-7           tool_use   1640.0   1        63313    69       1                               │
 │claude-code  claude-opus-4-7           tool_use   62855.0  1        57925    5314     0                               │
@@ -95,8 +95,8 @@ Cursor and Gemini CLI installed and no price table:
 │claude-code  claude-opus-4-7           tool_use   2491.0   1        42570    89       1                               │
 │claude-code  claude-opus-4-7           tool_use   5245.0   1        34258    89       1                               │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│↑/↓ or j/k select • Space freeze display • q/Esc quit • No prompts, credentials or tool arguments retained            │
+┌────────────────────────────────────────────────────────────────────────────────��─────────────────────────────────────
+│↑/↓ or j/k select • s sort newest/slowest/biggest • Space freeze display • q/Esc quit • No prompts, credentials or too│
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -159,6 +159,7 @@ The dashboard reads these keys. There are no other bindings.
 |-----|--------|
 | `j` / `Down` | Move the selection down |
 | `k` / `Up` | Move the selection up |
+| `s` | Cycle the request order: newest first, slowest turn first, most tokens first |
 | `Space` | Freeze the display. Collection continues in the background |
 | `q` / `Esc` | Quit and restore the terminal |
 | `Ctrl+C` | Quit and restore the terminal |
