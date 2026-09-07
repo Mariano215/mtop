@@ -18,7 +18,7 @@ fn decimal(n: Option<f64>) -> String {
 pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool) {
     // One extra line per proxy listener, so the ports stay on screen while you configure a client.
     let listener_lines = s.listeners.len().min(4) as u16;
-    let source_lines = s.sources.len().min(8) as u16;
+    let source_lines = s.sources.len().min(8) as u16 + u16::from(!s.telemetry.is_empty());
     let areas = Layout::vertical([
         Constraint::Length(3 + listener_lines + source_lines),
         Constraint::Length(7),
@@ -45,6 +45,14 @@ pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool)
     }
     for (name, status) in s.sources.iter().take(8) {
         summary.push_str(&format!("\n{name:<12} {status}"));
+    }
+    if !s.telemetry.is_empty() {
+        let counts: Vec<String> = s
+            .telemetry
+            .iter()
+            .map(|(p, n)| format!("{p} {n}"))
+            .collect();
+        summary.push_str(&format!("\n{:<12} {}", "telemetry", counts.join(", ")));
     }
     f.render_widget(
         Paragraph::new(summary)

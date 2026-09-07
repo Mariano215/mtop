@@ -87,6 +87,8 @@ pub struct Store {
     pub listeners: Vec<String>,
     /// One "tool name -> what MTop does about it" pair per tool found on this machine.
     pub sources: Vec<(String, String)>,
+    /// Requests received over OpenTelemetry, per provider.
+    pub telemetry: std::collections::BTreeMap<String, u64>,
     pub completed: u64,
     pub evicted: u64,
     pub known_cost_usd: f64,
@@ -105,6 +107,7 @@ impl Store {
             backends: vec![],
             listeners: vec![],
             sources: vec![],
+            telemetry: Default::default(),
             completed: 0,
             evicted: 0,
             known_cost_usd: 0.0,

@@ -2,9 +2,9 @@ use clap::{Parser, Subcommand};
 use mtop::{
     history,
     model::{Backend, Price, RequestMetric, Store, Usage},
-    poller,
+    otlp, poller,
     proxy::{Proxy, Timeouts},
-    scan, tail, ui,
+    scan, setup, tail, ui,
 };
 use std::{io::IsTerminal, net::SocketAddr, path::PathBuf, time::Duration};
 
@@ -56,6 +56,12 @@ struct Args {
     /// Do not read Claude Code or Codex transcripts from the home directory.
     #[arg(long)]
     no_tail: bool,
+    /// OpenTelemetry receiver address for tools set up with `mtop setup`. Must be loopback.
+    #[arg(long, default_value = "127.0.0.1:4318", global = true)]
+    otlp: SocketAddr,
+    /// Do not start the OpenTelemetry receiver.
+    #[arg(long)]
+    no_otlp: bool,
     #[arg(long)]
     vllm: Option<String>,
     /// Upstream to observe. Repeat for several. Either a bare URL, which uses
@@ -108,6 +114,16 @@ enum Command {
         #[arg(trailing_var_arg = true, required = true)]
         argv: Vec<String>,
     },
+    /// Turn on Claude Code, Codex and Gemini CLI telemetry export, pointed at
+    /// MTop's --otlp address. Shows each change and asks before writing.
+    Setup {
+        /// Undo what `setup` wrote.
+        #[arg(long)]
+        remove: bool,
+        /// Write without asking.
+        #[arg(long, short)]
+        yes: bool,
+    },
 }
 
 /// Bind one loopback listener per upstream, counting up from `listen`.
@@ -144,6 +160,18 @@ async fn start_proxies(
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    if let Some(Command::Setup { remove, yes }) = &args.command {
+        anyhow::ensure!(
+            args.otlp.ip().is_loopback(),
+            "--otlp must be a loopback address"
+        );
+        setup::apply(setup::plan(args.otlp, *remove)?, *yes)?;
+        println!(
+            "\nRun `mtop` and start the tool in another terminal; it reports to http://{}",
+            args.otlp
+        );
+        return Ok(());
+    }
     if let Some(Command::Scan) = args.command {
         scan::scan().print();
         return Ok(());
@@ -324,6 +352,23 @@ async fn main() -> anyhow::Result<()> {
         }
         if !args.no_tail {
             tokio::spawn(tail::run(store.clone()));
+        }
+        if !args.no_otlp {
+            anyhow::ensure!(
+                args.otlp.ip().is_loopback(),
+                "--otlp must be a loopback address"
+            );
+            let listener = tokio::net::TcpListener::bind(args.otlp)
+                .await
+                .map_err(|e| anyhow::anyhow!("cannot bind OTLP receiver {}: {e}", args.otlp))?;
+            store.lock().unwrap().listeners.push(format!(
+                "telemetry receiver http://{} (mtop setup)",
+                args.otlp
+            ));
+            let router = otlp::Receiver::new(store.clone(), prices.clone()).router();
+            tokio::spawn(async move {
+                let _ = axum::serve(listener, router).await;
+            });
         }
     }
     if args.once {

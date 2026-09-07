@@ -42,10 +42,22 @@ anything anywhere. `mtop scan` finds the tools you already have,
 `mtop run -- <cmd>` routes one of them through MTop with no config editing,
 and `--history` keeps the numbers so you can look back.
 
-**What it is not.** It cannot see network traffic from a process you have not
-routed through it. There is no eBPF and no packet sniffing. The passive
-sources are the transcripts Claude Code and Codex write to disk: see
-[Claude Code and Codex without a proxy](#claude-code-and-codex-without-a-proxy). That is a deliberate scope choice, not a missing feature: see
+**How it sees a tool.** Three doors, and each tool has one or more:
+
+1. **Telemetry.** Claude Code, Codex and Gemini CLI can export their own usage
+   over OpenTelemetry. `mtop setup` turns that on, pointed at MTop. This is the
+   supported path and the most complete: the tool reports its own token
+   counts, timings and (for Claude Code) cost. See [Setup](#setup).
+2. **Transcripts.** Claude Code and Codex also write usage to disk. A plain
+   `mtop` reads those files with no setup at all. See
+   [Claude Code and Codex without a proxy](#claude-code-and-codex-without-a-proxy).
+3. **Proxy.** Anything that accepts a base URL can be pointed at MTop with
+   `mtop run -- <cmd>`. This is the only door for key-based tools like Aider.
+
+**What it is not.** It cannot see network traffic from a process that uses
+none of the doors. There is no eBPF and no packet sniffing. A tool that talks
+to its vendor's own backend, like Cursor or the desktop chat apps, is not
+observable from your machine by MTop or by anything else. That is a deliberate scope choice, not a missing feature: see
 [the specification](docs/SPEC.md) for the reasoning.
 
 ## Install
@@ -96,6 +108,9 @@ The dashboard reads these keys. There are no other bindings.
 | `--ollama <URL>` | `http://127.0.0.1:11434` | Ollama origin to poll |
 | `--no-ollama` | off | Skip Ollama polling |
 | `--no-tail` | off | Do not read Claude Code or Codex transcripts from the home directory |
+| `--otlp <ADDR>` | `127.0.0.1:4318` | OpenTelemetry receiver address. Must be loopback |
+| `--no-otlp` | off | Do not start the OpenTelemetry receiver |
+| `setup [--remove] [--yes]` | | Subcommand. Write each tool's telemetry export config, pointed at `--otlp` |
 | `--vllm <URL>` | none | vLLM origin for server-level metrics |
 | `--upstream <SPEC>` | none | Turn on a proxy listener. Repeatable. `URL` or `PROVIDER=URL`. No `/v1` suffix |
 | `--listen <ADDR>` | `127.0.0.1:8088` | First proxy port. Must be loopback. Later upstreams count up from here |
@@ -120,6 +135,36 @@ it finds reaches the store, the JSON snapshot or any log.
 
 Finding a tool does not monitor it. You still have to point that tool at the
 matching port.
+
+## Setup
+
+```sh
+mtop setup
+```
+
+For each of Claude Code, Codex and Gemini CLI, `setup` prints the file and the
+change, asks, copies the file to `<file>.mtop.bak`, then writes. Nothing is
+written without a `y`, or `--yes`. `mtop setup --remove` takes the same keys
+out again. Only the named keys are touched; the rest of each file is kept as
+is and never printed.
+
+| Tool | File | Change |
+|------|------|--------|
+| Claude Code | `~/.claude/settings.json` | five `env` keys: enable telemetry, OTLP exporters, `http/json`, endpoint |
+| Codex | `~/.codex/config.toml` | an `[otel]` block between `# mtop-begin` and `# mtop-end` markers |
+| Gemini CLI | `~/.gemini/settings.json` | a `telemetry` block with a local OTLP target |
+
+Then run `mtop` and use the tool in any other terminal. The tool pushes each
+completed API call to `http://127.0.0.1:4318/v1/logs`, and the request table
+shows it with status `telemetry`. Prompt and response text stay redacted:
+`setup` never sets `OTEL_LOG_USER_PROMPTS` or its equivalents, and the
+receiver reads only the model name and the numeric fields of three events
+(`claude_code.api_request`, `codex.sse_event`, `gemini_cli.api_response`).
+Metrics and traces posts are accepted and discarded.
+
+If a tool already exports somewhere else, `setup` says so ("currently
+http://...") before asking, and a Codex `[otel]` section MTop did not write is
+never overwritten. The receiver binds loopback only and caps bodies at 4 MiB.
 
 ## Claude Code and Codex without a proxy
 
