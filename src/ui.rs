@@ -4,7 +4,7 @@ use ratatui::{
     Frame,
     layout::{Constraint, Layout},
     style::{Color, Style},
-    text::Line,
+    text::{Line, Span},
     widgets::{Block, Paragraph, Row, Table, TableState},
 };
 use std::time::Duration;
@@ -38,22 +38,32 @@ pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool)
     );
     // A zero nobody measured is not a number; say unavailable instead.
     let nothing_priced = s.completed > 0 && s.unpriced == s.completed;
-    let mut lines: Vec<Line> = vec![Line::raw(format!(
-        "Completed {}  |  Priced estimate {}  |  Unpriced {}{}  |  Evicted {}",
-        s.completed,
-        if nothing_priced {
-            "—".to_string()
-        } else {
-            format!("${:.6}", s.known_cost_usd)
-        },
-        s.unpriced,
-        if nothing_priced {
-            " (no --prices given)"
-        } else {
-            ""
-        },
-        s.evicted
-    ))];
+    let mut lines: Vec<Line> = vec![Line::from(vec![
+        Span::raw(format!(
+            "Completed {}  |  Priced estimate {}  |  Unpriced {}{}  |  ",
+            s.completed,
+            if nothing_priced {
+                "—".to_string()
+            } else {
+                format!("${:.6}", s.known_cost_usd)
+            },
+            s.unpriced,
+            if nothing_priced {
+                " (no --prices given)"
+            } else {
+                ""
+            },
+        )),
+        // Dropped rows are the one number here that means data was lost.
+        Span::styled(
+            format!("Evicted {}", s.evicted),
+            Style::default().fg(if s.evicted > 0 {
+                Color::Red
+            } else {
+                Color::Yellow
+            }),
+        ),
+    ])];
     for line in s.listeners.iter().take(4) {
         lines.push(Line::raw(line.clone()));
     }
@@ -89,25 +99,31 @@ pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool)
             .style(Style::default().fg(Color::Yellow)),
         areas[0],
     );
-    let backends: Vec<Row> = s
-        .backends
-        .iter()
-        .map(|b| {
-            Row::new(vec![
-                b.source.clone(),
-                b.status.clone(),
-                b.model.clone(),
-                b.vram_bytes
-                    .map(|v| format!("{:.2} GiB", v as f64 / 1073741824.))
-                    .unwrap_or_else(|| "—".into()),
-                decimal(b.running),
-                decimal(b.waiting),
-                b.cache_fraction
-                    .map(|v| format!("{:.1}%", v * 100.))
-                    .unwrap_or_else(|| "—".into()),
-            ])
-        })
-        .collect();
+    // An empty box must say why, like every other box on the screen.
+    let mut backends: Vec<Row> = if s.backends.is_empty() {
+        vec![Row::new(vec![
+            "none".to_string(),
+            "not polled".to_string(),
+            "no local server polled: drop --no-ollama, or pass --vllm <URL>".to_string(),
+        ])]
+    } else {
+        vec![]
+    };
+    backends.extend(s.backends.iter().map(|b| {
+        Row::new(vec![
+            b.source.clone(),
+            b.status.clone(),
+            b.model.clone(),
+            b.vram_bytes
+                .map(|v| format!("{:.2} GiB", v as f64 / 1073741824.))
+                .unwrap_or_else(|| "—".into()),
+            decimal(b.running),
+            decimal(b.waiting),
+            b.cache_fraction
+                .map(|v| format!("{:.1}%", v * 100.))
+                .unwrap_or_else(|| "—".into()),
+        ])
+    }));
     f.render_widget(
         Table::new(
             backends,
@@ -138,7 +154,6 @@ pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool)
         .rev()
         .map(|r| {
             Row::new(vec![
-                r.id.to_string(),
                 r.provider.clone(),
                 r.model.clone(),
                 r.status.clone(),
@@ -163,7 +178,6 @@ pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool)
         Table::new(
             rows,
             [
-                Constraint::Length(5),
                 Constraint::Length(12),
                 Constraint::Min(15),
                 Constraint::Length(10),
@@ -179,8 +193,8 @@ pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool)
         )
         .header(
             Row::new([
-                "ID", "Provider", "Model", "Status", "TTFT ms", "Dur ms", "Input", "Cache",
-                "Output", "Tools", "Est. USD", "Parse",
+                "Provider", "Model", "Status", "TTFT ms", "Dur ms", "Input", "Cache", "Output",
+                "Tools", "Est. USD", "Parse",
             ])
             .style(Style::default().fg(Color::Cyan)),
         )
