@@ -129,7 +129,8 @@ pub fn draw(f: &mut Frame, s: &Store, v: View) {
 
     // Header.
     let title = format!(
-        " MTop 0.1 • {}{} ",
+        " MTop {} • {}{} ",
+        env!("CARGO_PKG_VERSION"),
         if v.demo {
             "DEMO / SYNTHETIC"
         } else {

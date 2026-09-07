@@ -10,7 +10,7 @@
 ║                                                                    ║
 ║   M O D E L   T E L E M E T R Y   C O N S O L E                    ║
 ╠════════════════════════════════════════════════════════════════════╣
-║  v0.1  ·  RUST + RATATUI  ·  LOOPBACK ONLY  ·  NO PERSISTENCE      ║
+║  v0.2  ·  RUST + RATATUI  ·  LOOPBACK ONLY  ·  OPT-IN HISTORY      ║
 ╚════════════════════════════════════════════════════════════════════╝
 ```
 
@@ -23,7 +23,7 @@
 A terminal console for local model telemetry and opt-in API request
 observation. Think `htop`, but for the model calls your machine is making.
 
-**v0.1 is a tested starter implementation, not a universal passive AI monitor.**
+**v0.2 is a tested implementation with three observation doors, not a universal passive network monitor.**
 Read [Explicit limits](#explicit-limits) before you rely on it.
 
 ## Why
@@ -66,7 +66,7 @@ A live capture, 130 columns, on a machine with Claude Code, Codex, Ollama,
 Cursor and Gemini CLI installed and no price table:
 
 ```text
-┌ MTop 0.1 • LIVE / METRICS ONLY ────────────────────────────────────────────────────────────────────────────────────────────────┐
+┌ MTop 0.2.0 • LIVE / METRICS ONLY ────────────────────────────────────────────────────────────────────────────────────────────────┐
 │Completed 448  |  Priced estimate —  |  Unpriced 448 (no --prices given)  |  Evicted 0                                          │
 │Last 5 min: 0 tokens/min  |  — /hour  |  453 tool calls  |  6 models  |  25 sessions                                            │
 │telemetry receiver http://127.0.0.1:4318 (mtop setup)                                                                           │
@@ -194,7 +194,7 @@ The dashboard reads these keys. There are no other bindings.
 | `--capacity <N>` | `1000` | Retained request rows, 1 to 10000 |
 | `--request-timeout <SECONDS>` | `600` | Whole upstream exchange, 1 to 86400 |
 | `--body-timeout <SECONDS>` | `30` | Client body intake, 1 to 86400 |
-| `--metrics-only` | always on | Accepted for explicit invocation. v0.1 has no other mode |
+| `--metrics-only` | always on | Accepted for explicit invocation. There is no other mode |
 
 ## Find what to observe
 
@@ -442,7 +442,7 @@ Anthropic input excludes separately reported cache tokens; OpenAI cached tokens 
 
 ## Status and roadmap
 
-v0.1 works and is tested on Linux, macOS and Windows. Known gaps, roughly in
+v0.2 works and is tested on Linux, macOS and Windows. Known gaps, roughly in
 the order they matter:
 
 - OpenAI Responses normalization is partial, so some reasoning-model usage

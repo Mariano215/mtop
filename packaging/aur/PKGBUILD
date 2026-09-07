@@ -1,6 +1,6 @@
 # Maintainer: Mariano Mattei <mariano215@gmail.com>
 pkgname=mtop
-pkgver=0.1.1
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Terminal observability console for local model telemetry and API request observation"
 arch=('x86_64' 'aarch64')
