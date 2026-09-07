@@ -164,7 +164,20 @@ pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool)
             Constraint::Length(12),
             Box::new(|r| r.provider.clone()),
         ),
-        ("Model", Constraint::Min(15), Box::new(|r| r.model.clone())),
+        // Sized to the longest model actually present, like btop, so the
+        // box has no dead width. Min 15 keeps the header readable when empty.
+        (
+            "Model",
+            Constraint::Length(
+                s.requests
+                    .iter()
+                    .map(|r| r.model.chars().count())
+                    .max()
+                    .unwrap_or(0)
+                    .clamp(15, 40) as u16,
+            ),
+            Box::new(|r| r.model.clone()),
+        ),
         (
             "Status",
             Constraint::Length(10),

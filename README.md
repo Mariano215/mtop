@@ -67,14 +67,14 @@ Cursor and Gemini CLI installed and no price table:
 
 ```text
 ┌ MTop 0.1 • LIVE / METRICS ONLY ──────────────────────────────────────────────────────────────────────────────────────┐
-│Completed 391  |  Priced estimate —  |  Unpriced 391 (no --prices given)  |  Evicted 0                                │
+│Completed 434  |  Priced estimate —  |  Unpriced 434 (no --prices given)  |  Evicted 0                                │
 │telemetry receiver http://127.0.0.1:4318 (mtop setup)                                                                 │
-│Claude Code  watching ~/.claude/projects, 8 active                                                                    │
+│Claude Code  watching ~/.claude/projects, 9 active                                                                    │
 │Codex        watching ~/.codex/sessions, 0 active                                                                     │
-│Ollama       installed; point the client at the ollama port, or set OLLAMA_HOST                                       │
+│Ollama       installed; run `mtop run -- <your ollama client>`                                                        │
 │Continue     installed; set apiBase per model in ~/.continue/config.json                                              │
 │Cursor       installed; talks to Cursor's own backend; not observable locally                                         │
-│Gemini CLI   installed; run `mtop setup`; the proxy has no Gemini parser, telemetry does                              │
+│Gemini CLI   installed; run `mtop setup`                                                                              │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ Backends • polling does not observe individual requests ─────────────────────────────────────────────────────────────┐
 │Source    Status        Model                                                  VRAM         Running  Waiting  KV max  │
@@ -84,16 +84,16 @@ Cursor and Gemini CLI installed and no price table:
 │                                                                                                                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ Observed requests • Cache = tokens read from or written to prompt cache • — means unavailable ───��───────────────────
-│Provider     Model                                                Status     Dur ms   Input    Cache    Output   Tools│
-│claude-code  claude-opus-4-7                                      tool_use   1640.0   1        63313    69       1    │
-│claude-code  claude-opus-4-7                                      tool_use   62855.0  1        57925    5314     0    │
-│claude-code  claude-opus-4-7                                      tool_use   2348.0   1        45318    227      1    │
-│claude-code  claude-opus-4-7                                      tool_use   2961.0   6        33932    209      0    │
-│claude-code  claude-opus-4-7                                      tool_use   2532.0   1        52038    69       1    │
-│claude-code  claude-opus-4-7                                      tool_use   17686.0  1        50285    1679     0    │
-│claude-code  claude-opus-4-7                                      tool_use   53893.0  1        46401    3755     0    │
-│claude-code  claude-opus-4-7                                      tool_use   2491.0   1        42570    89       1    │
-│claude-code  claude-opus-4-7                                      tool_use   5245.0   1        34258    89       1    │
+│Provider     Model                     Status     Dur ms   Input    Cache    Output   Tools                           │
+│claude-code  claude-opus-4-7           tool_use   1640.0   1        63313    69       1                               │
+│claude-code  claude-opus-4-7           tool_use   62855.0  1        57925    5314     0                               │
+│claude-code  claude-opus-4-7           tool_use   2348.0   1        45318    227      1                               │
+│claude-code  claude-opus-4-7           tool_use   2961.0   6        33932    209      0                               │
+│claude-code  claude-opus-4-7           tool_use   2532.0   1        52038    69       1                               │
+│claude-code  claude-opus-4-7           tool_use   17686.0  1        50285    1679     0                               │
+│claude-code  claude-opus-4-7           tool_use   53893.0  1        46401    3755     0                               │
+│claude-code  claude-opus-4-7           tool_use   2491.0   1        42570    89       1                               │
+│claude-code  claude-opus-4-7           tool_use   5245.0   1        34258    89       1                               │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │↑/↓ or j/k select • Space freeze display • q/Esc quit • No prompts, credentials or tool arguments retained            │
