@@ -83,6 +83,8 @@ impl Price {
 pub struct Store {
     pub requests: VecDeque<RequestMetric>,
     pub backends: Vec<Backend>,
+    /// One "provider url -> listen address" line per running proxy listener.
+    pub listeners: Vec<String>,
     pub completed: u64,
     pub evicted: u64,
     pub known_cost_usd: f64,
@@ -96,6 +98,7 @@ impl Store {
         Arc::new(Mutex::new(Self {
             requests: VecDeque::new(),
             backends: vec![],
+            listeners: vec![],
             completed: 0,
             evicted: 0,
             known_cost_usd: 0.0,

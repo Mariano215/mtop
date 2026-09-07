@@ -56,9 +56,9 @@ The dashboard reads these keys. There are no other bindings.
 | `--ollama <URL>` | `http://127.0.0.1:11434` | Ollama origin to poll |
 | `--no-ollama` | off | Skip Ollama polling |
 | `--vllm <URL>` | none | vLLM origin for server-level metrics |
-| `--upstream <ORIGIN>` | none | Turn on the proxy and forward to this origin. No `/v1` suffix |
-| `--listen <ADDR>` | `127.0.0.1:8088` | Proxy listen address. Must be loopback |
-| `--provider <NAME>` | `openai` | Parser to use: `openai`, `anthropic` or `ollama` |
+| `--upstream <SPEC>` | none | Turn on a proxy listener. Repeatable. `URL` or `PROVIDER=URL`. No `/v1` suffix |
+| `--listen <ADDR>` | `127.0.0.1:8088` | First proxy port. Must be loopback. Later upstreams count up from here |
+| `--provider <NAME>` | `openai` | Parser for any `--upstream` given as a bare URL: `openai`, `anthropic` or `ollama` |
 | `--prices <FILE>` | none | JSON price table, see [Prices](#prices) |
 | `--capacity <N>` | `1000` | Retained request rows, 1 to 10000 |
 | `--request-timeout <SECONDS>` | `600` | Whole upstream exchange, 1 to 86400 |
@@ -85,6 +85,28 @@ cargo run --locked -- --upstream https://api.anthropic.com --provider anthropic
 
 # Optional vLLM server-level metrics.
 cargo run --locked -- --vllm http://127.0.0.1:8000
+```
+
+### Several providers at once
+
+Repeat `--upstream`. Each one gets its own port, counting up from `--listen`
+in the order you write them. The running dashboard lists the ports at the top,
+so you can read them off while configuring a client.
+
+```sh
+cargo run --locked -- \
+  --upstream openai=https://api.openai.com \
+  --upstream anthropic=https://api.anthropic.com \
+  --upstream ollama=http://127.0.0.1:11434
+# openai     -> http://127.0.0.1:8088
+# anthropic  -> http://127.0.0.1:8089
+# ollama     -> http://127.0.0.1:8090
+```
+
+OpenRouter and other OpenAI-compatible services use the `openai` parser:
+
+```sh
+cargo run --locked -- --upstream openai=https://openrouter.ai/api
 ```
 
 Only clients routed through the proxy are observed. No request modification enables extra usage fields:
@@ -148,5 +170,4 @@ Anthropic input excludes separately reported cache tokens; OpenAI cached tokens 
 
 ## License
 
-No license file is present. Until one is added, default copyright applies and
-others have no right to use, copy or redistribute this code.
+MIT. See [LICENSE](LICENSE).

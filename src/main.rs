@@ -7,6 +7,17 @@ use mtop::{
 };
 use std::{io::IsTerminal, net::SocketAddr, path::PathBuf, time::Duration};
 
+const PROVIDERS: [&str; 3] = ["openai", "anthropic", "ollama"];
+
+/// Split PROVIDER=URL. A bare URL, or a prefix that is not a known provider,
+/// falls back to the --provider default.
+fn split_upstream<'a>(spec: &'a str, default: &'a str) -> (&'a str, &'a str) {
+    match spec.split_once('=') {
+        Some((p, url)) if PROVIDERS.contains(&p) => (p, url),
+        _ => (default, spec),
+    }
+}
+
 #[derive(Parser)]
 #[command(
     version,
@@ -25,12 +36,16 @@ struct Args {
     no_ollama: bool,
     #[arg(long)]
     vllm: Option<String>,
-    /// Upstream origin, for example https://api.anthropic.com (no /v1 suffix).
+    /// Upstream to observe. Repeat for several. Either a bare URL, which uses
+    /// --provider, or PROVIDER=URL, for example anthropic=https://api.anthropic.com.
+    /// Give the origin only, with no /v1 suffix. Each upstream gets its own
+    /// loopback port, starting at --listen and counting up in the order given.
     #[arg(long)]
-    upstream: Option<String>,
+    upstream: Vec<String>,
     #[arg(long, default_value = "127.0.0.1:8088")]
     listen: SocketAddr,
-    #[arg(long, default_value = "openai", value_parser = ["openai", "anthropic", "ollama"])]
+    /// Parser for any --upstream given as a bare URL.
+    #[arg(long, default_value = "openai", value_parser = PROVIDERS)]
     provider: String,
     /// JSON array of exact model IDs and user-supplied prices per million tokens.
     #[arg(long)]
@@ -56,8 +71,16 @@ async fn main() -> anyhow::Result<()> {
         "proxy listener must be a loopback address"
     );
     anyhow::ensure!(
-        !(args.once && args.upstream.is_some()),
+        !(args.once && !args.upstream.is_empty()),
         "--once cannot run an upstream proxy"
+    );
+    anyhow::ensure!(
+        args.listen
+            .port()
+            .checked_add(args.upstream.len() as u16)
+            .is_some(),
+        "not enough ports above --listen for {} upstreams",
+        args.upstream.len()
     );
     let prices: Vec<Price> = if let Some(path) = args.prices {
         serde_json::from_slice(&std::fs::read(path)?)?
@@ -142,27 +165,55 @@ async fn main() -> anyhow::Result<()> {
         std::io::stdout().is_terminal(),
         "TUI requires a terminal; use --demo --once for JSON"
     );
-    let server = if !args.demo {
-        if let Some(upstream) = args.upstream {
-            let timeouts = Timeouts {
-                body: Duration::from_secs(args.body_timeout as u64),
-                upstream: Duration::from_secs(args.request_timeout as u64),
-            };
-            let router =
-                Proxy::new(store.clone(), &upstream, &args.provider, prices, timeouts)?.router();
-            let listener = tokio::net::TcpListener::bind(args.listen).await?;
-            Some(tokio::spawn(
-                async move { axum::serve(listener, router).await },
-            ))
-        } else {
-            None
-        }
-    } else {
-        None
+    let timeouts = Timeouts {
+        body: Duration::from_secs(args.body_timeout as u64),
+        upstream: Duration::from_secs(args.request_timeout as u64),
     };
+    let mut servers = vec![];
+    if !args.demo {
+        for (offset, spec) in args.upstream.iter().enumerate() {
+            let (provider, url) = split_upstream(spec, &args.provider);
+            let mut addr = args.listen;
+            addr.set_port(args.listen.port() + offset as u16);
+            let router =
+                Proxy::new(store.clone(), url, provider, prices.clone(), timeouts)?.router();
+            let listener = tokio::net::TcpListener::bind(addr).await?;
+            store
+                .lock()
+                .unwrap()
+                .listeners
+                .push(format!("{provider} {url} -> http://{addr}"));
+            servers.push(tokio::spawn(
+                async move { axum::serve(listener, router).await },
+            ));
+        }
+    }
     let result = tokio::task::spawn_blocking(move || ui::run(store, args.demo)).await?;
-    if let Some(server) = server {
+    for server in servers {
         server.abort();
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_upstream;
+
+    #[test]
+    fn splits_provider_prefix_and_leaves_bare_urls_alone() {
+        assert_eq!(
+            split_upstream("anthropic=https://api.anthropic.com", "openai"),
+            ("anthropic", "https://api.anthropic.com")
+        );
+        // A bare URL falls back to --provider.
+        assert_eq!(
+            split_upstream("https://api.openai.com", "openai"),
+            ("openai", "https://api.openai.com")
+        );
+        // An unknown prefix is not a provider, so the whole spec stays the URL.
+        assert_eq!(
+            split_upstream("https://x.test/?a=b", "ollama"),
+            ("ollama", "https://x.test/?a=b")
+        );
+    }
 }
