@@ -309,13 +309,7 @@ async fn main() -> anyhow::Result<()> {
             store.lock().unwrap().backend(rows, source);
         }
         if !args.no_tail {
-            let mut tailer = tail::Tailer::default();
-            for (source, dir) in tail::SOURCES
-                .iter()
-                .filter_map(|s| s.path().map(|p| (s, p)))
-            {
-                tailer.poll(source, &dir, &store);
-            }
+            tail::poll_all(&mut tail::Tailer::default(), &store);
         }
     } else {
         anyhow::ensure!(
