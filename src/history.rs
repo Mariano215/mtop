@@ -241,7 +241,7 @@ mod tests {
         // Wait for both rows, not just the first: the writer is a thread.
         for _ in 0..250 {
             if summary(&path, 0)
-                .map(|r| r.iter().map(|x| x.requests).sum::<u64>() >= 2)
+                .map(|r| r.iter().map(|x| x.requests).sum::<i64>() >= 2)
                 .unwrap_or(false)
             {
                 break;
