@@ -51,7 +51,9 @@ jobs:
           mkdir -p "dist/$name"
           cp "target/${TARGET}/release/mtop" README.md LICENSE "dist/$name/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
-          shasum -a 256 "dist/$name.tar.gz" > "dist/$name.tar.gz.sha256"
+          # Run from inside dist: shasum records the path it is given, and a
+          # "dist/" prefix makes `shasum -c` fail for whoever downloads it.
+          (cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
 
       - name: Package (windows)
         if: runner.os == 'Windows'
@@ -64,7 +66,11 @@ jobs:
           mkdir -p "dist/$name"
           cp "target/${TARGET}/release/mtop.exe" README.md LICENSE "dist/$name/"
           powershell -Command "Compress-Archive -Path 'dist/$name' -DestinationPath 'dist/$name.zip'"
-          certutil -hashfile "dist/$name.zip" SHA256 > "dist/$name.zip.sha256"
+          # Same shape as the unix files: lowercase hash, two spaces, bare
+          # filename, so one `shasum -c` works on every platform. certutil
+          # emits a multi-line report that no checker understands.
+          (cd dist && sha256sum "$name.zip" > "$name.zip.sha256" 2>/dev/null \
+            || shasum -a 256 "$name.zip" > "$name.zip.sha256")
 
       - uses: actions/upload-artifact@v4
         with:
