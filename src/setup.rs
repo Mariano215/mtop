@@ -171,7 +171,12 @@ fn gemini(path: &Path, base: &str, remove: bool) -> Result<Step> {
     } else if remove {
         "remove the \"telemetry\" block".into()
     } else {
-        format!("set \"telemetry\" to a local OTLP target at {base}")
+        let old = before
+            .as_ref()
+            .and_then(|t| t["otlpEndpoint"].as_str())
+            .map(|e| format!(" (currently {e})"))
+            .unwrap_or_default();
+        format!("set \"telemetry\" to a local OTLP target at {base}{old}")
     };
     Ok(Step {
         tool: "Gemini CLI",
@@ -181,33 +186,41 @@ fn gemini(path: &Path, base: &str, remove: bool) -> Result<Step> {
     })
 }
 
-/// Show each step, ask, back up, write. `yes` skips the questions.
+/// Show every step, ask once, then back up and write each one. `yes` skips the question.
 pub fn apply(steps: Vec<Step>, yes: bool) -> Result<()> {
-    let interactive = std::io::stdin().is_terminal();
-    for step in steps {
+    for step in &steps {
         println!(
             "{:<12} {}\n             {}",
             step.tool,
             step.path.display(),
             step.summary
         );
-        let Some(next) = step.next else {
-            continue;
-        };
-        if !yes {
-            anyhow::ensure!(
-                interactive,
-                "not a terminal: pass --yes to apply without asking"
-            );
-            print!("             write it? [y/N] ");
-            std::io::stdout().flush()?;
-            let mut answer = String::new();
-            std::io::stdin().read_line(&mut answer)?;
-            if !matches!(answer.trim(), "y" | "Y" | "yes") {
-                println!("             skipped");
-                continue;
-            }
+    }
+    let pending: Vec<Step> = steps.into_iter().filter(|s| s.next.is_some()).collect();
+    if pending.is_empty() {
+        println!("\nnothing to write");
+        return Ok(());
+    }
+    if !yes {
+        anyhow::ensure!(
+            std::io::stdin().is_terminal(),
+            "not a terminal: pass --yes to apply without asking"
+        );
+        print!(
+            "\nwrite {} file{}? [y/N] ",
+            pending.len(),
+            if pending.len() == 1 { "" } else { "s" }
+        );
+        std::io::stdout().flush()?;
+        let mut answer = String::new();
+        std::io::stdin().read_line(&mut answer)?;
+        if !matches!(answer.trim(), "y" | "Y" | "yes") {
+            println!("nothing written");
+            return Ok(());
         }
+    }
+    for step in pending {
+        let next = step.next.unwrap_or_default();
         if let Some(parent) = step.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -217,10 +230,10 @@ pub fn apply(steps: Vec<Step>, yes: bool) -> Result<()> {
                 step.path.extension().and_then(|e| e.to_str()).unwrap_or("")
             ));
             std::fs::copy(&step.path, &backup)?;
-            println!("             backup {}", backup.display());
+            println!("{:<12} backup {}", step.tool, backup.display());
         }
         std::fs::write(&step.path, next)?;
-        println!("             written");
+        println!("{:<12} written {}", step.tool, step.path.display());
     }
     Ok(())
 }

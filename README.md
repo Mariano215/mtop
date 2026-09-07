@@ -65,7 +65,17 @@ observable from your machine by MTop or by anything else. That is a deliberate s
 Prebuilt binaries for Linux (x86_64, aarch64), macOS (arm64, x86_64) and
 Windows (x86_64) are attached to each
 [release](https://github.com/Mariano215/mtop/releases), each with a SHA-256
-file. On Arch, build from `packaging/aur/PKGBUILD`.
+file. On Arch, build from `packaging/aur/PKGBUILD`. Put the binary on your
+PATH, then:
+
+```sh
+mtop --demo   # synthetic data, no network, to see the screen
+mtop          # live: every tool found on this machine, and its calls
+mtop setup    # one confirmed step to turn on Claude Code, Codex and Gemini CLI telemetry
+```
+
+Every `cargo run --locked --` example below is the same as `mtop` with the
+binary installed.
 
 ## Build from source
 
@@ -290,7 +300,8 @@ The listener is loopback-only. Do not expose it with port forwarding: it has no 
 ## Explicit limits
 
 No eBPF capture, PID attribution, full agent execution trees, tool arguments, prompt inspector, process termination,
-Gemini-native parser, dedicated llama.cpp collector, cost-rate chart or automatic pricing catalog yet.
+Gemini parser on the proxy door (Gemini CLI is observed through `mtop setup` telemetry only), dedicated llama.cpp
+collector, cost-rate chart or automatic pricing catalog yet.
 Responses normalization is partial; tool counts are capped at 1,024 unique calls per request.
 TTFT means time from forwarding start to first visible text event. Nonstreaming TTFT is unavailable.
 No tokenization estimates are made. Polling cannot recover per-request usage.
@@ -338,7 +349,9 @@ the order they matter:
 
 - OpenAI Responses normalization is partial, so some reasoning-model usage
   reads as unknown when the API did report it.
-- No Gemini parser. Gemini traffic forwards correctly but is not parsed.
+- No Gemini parser on the proxy. Gemini CLI reports through `mtop setup`
+  telemetry; a raw Gemini API client pointed at the proxy forwards but is not
+  parsed.
 - Pricing is manual. There is no bundled catalog yet, so cost is unknown
   until you supply a `--prices` file.
 - No live totals while `run` has a child attached; the summary comes at exit.

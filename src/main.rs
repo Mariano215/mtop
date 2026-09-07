@@ -358,17 +358,24 @@ async fn main() -> anyhow::Result<()> {
                 args.otlp.ip().is_loopback(),
                 "--otlp must be a loopback address"
             );
-            let listener = tokio::net::TcpListener::bind(args.otlp)
-                .await
-                .map_err(|e| anyhow::anyhow!("cannot bind OTLP receiver {}: {e}", args.otlp))?;
-            store.lock().unwrap().listeners.push(format!(
-                "telemetry receiver http://{} (mtop setup)",
-                args.otlp
-            ));
-            let router = otlp::Receiver::new(store.clone(), prices.clone()).router();
-            tokio::spawn(async move {
-                let _ = axum::serve(listener, router).await;
-            });
+            // A second mtop must not die because the first holds the port.
+            match tokio::net::TcpListener::bind(args.otlp).await {
+                Ok(listener) => {
+                    store.lock().unwrap().listeners.push(format!(
+                        "telemetry receiver http://{} (mtop setup)",
+                        args.otlp
+                    ));
+                    let router = otlp::Receiver::new(store.clone(), prices.clone()).router();
+                    tokio::spawn(async move {
+                        let _ = axum::serve(listener, router).await;
+                    });
+                }
+                Err(e) => store
+                    .lock()
+                    .unwrap()
+                    .listeners
+                    .push(format!("telemetry receiver {} not started: {e}", args.otlp)),
+            }
         }
     }
     if args.once {

@@ -4,6 +4,7 @@ use ratatui::{
     Frame,
     layout::{Constraint, Layout},
     style::{Color, Style},
+    text::Line,
     widgets::{Block, Paragraph, Row, Table, TableState},
 };
 use std::time::Duration;
@@ -35,16 +36,35 @@ pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool)
         },
         if paused { " • FROZEN" } else { "" }
     );
-    let mut summary = format!(
-        "Completed {}  |  Priced estimate ${:.6}  |  Unpriced {}  |  Evicted {}",
-        s.completed, s.known_cost_usd, s.unpriced, s.evicted
-    );
+    let mut lines: Vec<Line> = vec![Line::raw(format!(
+        "Completed {}  |  Priced estimate ${:.6}  |  Unpriced {}{}  |  Evicted {}",
+        s.completed,
+        s.known_cost_usd,
+        s.unpriced,
+        if s.completed > 0 && s.unpriced == s.completed {
+            " (no --prices given)"
+        } else {
+            ""
+        },
+        s.evicted
+    ))];
     for line in s.listeners.iter().take(4) {
-        summary.push('\n');
-        summary.push_str(line);
+        lines.push(Line::raw(line.clone()));
     }
+    // Color says the state, so the first frame reads at a glance:
+    // green is being watched, yellow needs a step, gray cannot be observed.
     for (name, status) in s.sources.iter().take(8) {
-        summary.push_str(&format!("\n{name:<12} {status}"));
+        let color = if status.starts_with("watching") {
+            Color::Green
+        } else if status.contains("not observable") {
+            Color::DarkGray
+        } else {
+            Color::Yellow
+        };
+        lines.push(Line::styled(
+            format!("{name:<12} {status}"),
+            Style::default().fg(color),
+        ));
     }
     if !s.telemetry.is_empty() {
         let counts: Vec<String> = s
@@ -52,10 +72,13 @@ pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool)
             .iter()
             .map(|(p, n)| format!("{p} {n}"))
             .collect();
-        summary.push_str(&format!("\n{:<12} {}", "telemetry", counts.join(", ")));
+        lines.push(Line::styled(
+            format!("{:<12} {}", "telemetry", counts.join(", ")),
+            Style::default().fg(Color::Green),
+        ));
     }
     f.render_widget(
-        Paragraph::new(summary)
+        Paragraph::new(lines)
             .block(Block::bordered().title(title))
             .style(Style::default().fg(Color::Yellow)),
         areas[0],
@@ -114,7 +137,12 @@ pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool)
                 r.model.clone(),
                 r.status.clone(),
                 decimal(r.ttft_ms),
+                decimal(r.duration_ms),
                 number(r.usage.input),
+                number(match (r.usage.cache_read, r.usage.cache_write) {
+                    (None, None) => None,
+                    (a, b) => Some(a.unwrap_or(0) + b.unwrap_or(0)),
+                }),
                 number(r.usage.output),
                 r.tool_calls.to_string(),
                 r.estimated_cost_usd
@@ -130,26 +158,30 @@ pub fn draw(f: &mut Frame, s: &Store, selected: usize, paused: bool, demo: bool)
             rows,
             [
                 Constraint::Length(5),
-                Constraint::Length(10),
+                Constraint::Length(12),
                 Constraint::Min(15),
-                Constraint::Length(14),
-                Constraint::Length(9),
-                Constraint::Length(9),
-                Constraint::Length(9),
-                Constraint::Length(6),
                 Constraint::Length(10),
-                Constraint::Length(6),
+                Constraint::Length(8),
+                Constraint::Length(8),
+                Constraint::Length(8),
+                Constraint::Length(8),
+                Constraint::Length(8),
+                Constraint::Length(5),
+                Constraint::Length(9),
+                Constraint::Length(5),
             ],
         )
         .header(
             Row::new([
-                "ID", "Provider", "Model", "Status", "TTFT ms", "Input", "Output", "Tools",
-                "Est. USD", "Parse",
+                "ID", "Provider", "Model", "Status", "TTFT ms", "Dur ms", "Input", "Cache",
+                "Output", "Tools", "Est. USD", "Parse",
             ])
             .style(Style::default().fg(Color::Cyan)),
         )
         .row_highlight_style(Style::default().bg(Color::DarkGray))
-        .block(Block::bordered().title(" Observed requests • — means unavailable ")),
+        .block(Block::bordered().title(
+            " Observed requests • Cache = tokens read from or written to prompt cache • — means unavailable ",
+        )),
         areas[2],
         &mut state,
     );

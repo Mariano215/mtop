@@ -79,7 +79,7 @@ const TOOLS: &[Tool] = &[
         name: "Gemini CLI",
         config: &[".gemini"],
         cli: "gemini",
-        route: "no Gemini parser yet; traffic would forward but not be parsed",
+        route: "run `mtop setup`; the proxy has no Gemini parser, telemetry does",
         provider: "",
     },
     Tool {
@@ -119,7 +119,7 @@ const PROVIDERS: &[Provider] = &[
     Provider {
         keys: &["GEMINI_API_KEY", "GOOGLE_API_KEY"],
         upstream: None,
-        note: "no Gemini parser yet",
+        note: "no Gemini parser on the proxy; Gemini CLI reports through `mtop setup`",
     },
 ];
 
