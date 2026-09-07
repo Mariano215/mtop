@@ -53,6 +53,8 @@ The dashboard reads these keys. There are no other bindings.
 |------|---------|---------|
 | `scan` | | Subcommand. List installed AI tools and provider keys, then exit |
 | `run -- <CMD>` | | Subcommand. Run `<CMD>` with its base URLs pointed at MTop |
+| `history` | | Subcommand. Summarize recorded requests per model, then exit |
+| `--history [PATH]` | off | Record completed requests to SQLite. No path means the default file |
 | `--demo` | off | Synthetic data, no network calls |
 | `--once` | off | Print one JSON snapshot and exit. Cannot run with `--upstream` |
 | `--ollama <URL>` | `http://127.0.0.1:11434` | Ollama origin to poll |
@@ -101,6 +103,30 @@ Variables set per provider: `openai` sets `OPENAI_BASE_URL` and
 `ANTHROPIC_BASE_URL`; `ollama` sets `OLLAMA_HOST`. MTop prints each one it
 sets. The child keeps your terminal, so there is no dashboard in this mode.
 The exit code is the child's.
+
+## Keep history
+
+Off by default: a plain run still stores nothing on disk. Add `--history` to
+record completed requests to SQLite, then read them back later.
+
+```sh
+# Record to the default file, ~/.local/share/mtop/history.db.
+cargo run --locked -- --history run -- claude -p 'say ok'
+
+# Or name the file.
+cargo run --locked -- --history /tmp/mtop.db --upstream ollama=http://127.0.0.1:11434
+
+# Summarize per model. --days 0 means everything.
+cargo run --locked -- history --days 30
+```
+
+Only the numbers and bounded labels already held in memory are written:
+timestamp, provider, model, status, token counts, timings, tool count and any
+cost estimate. No prompts, no responses, no headers and no credentials. A
+request with no price stays unknown in the report and is excluded from the
+total, never counted as zero. Writes go through one background thread, so the
+store lock is never held across disk I/O, and the file uses WAL so several
+MTop instances can record to it at once.
 
 ## Observe requests
 
@@ -176,7 +202,8 @@ Oversized parser records increase `Parse`; forwarding continues. Large prompts e
 Requests time out after 600 seconds (body intake: 30 seconds). Change both with `--request-timeout <SECONDS>`
 and `--body-timeout <SECONDS>`, each accepting 1 to 86400.
 Only numeric metadata and bounded model/provider/status labels remain in the store. Parsing transiently touches plaintext;
-this is not secure memory erasure or protection from OS swap/core dumps. No persistence or analytics service is enabled.
+this is not secure memory erasure or protection from OS swap/core dumps. Nothing is written to disk and no analytics
+service is enabled unless `--history` is given, which records only those same numeric fields and bounded labels.
 Closing MTop also closes its active proxy connections.
 
 ## Prices

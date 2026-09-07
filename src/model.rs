@@ -91,6 +91,9 @@ pub struct Store {
     pub unpriced: u64,
     #[serde(skip)]
     capacity: usize,
+    /// Set by --history. Sending never blocks on disk: one background thread writes.
+    #[serde(skip)]
+    pub history: Option<std::sync::mpsc::Sender<RequestMetric>>,
 }
 
 impl Store {
@@ -104,6 +107,7 @@ impl Store {
             known_cost_usd: 0.0,
             unpriced: 0,
             capacity: capacity.max(1),
+            history: None,
         }))
     }
     pub fn update(&mut self, item: RequestMetric) {
@@ -123,6 +127,9 @@ impl Store {
             self.known_cost_usd += cost;
         } else {
             self.unpriced += 1;
+        }
+        if let Some(history) = &self.history {
+            let _ = history.send(item.clone());
         }
         self.update(item);
     }

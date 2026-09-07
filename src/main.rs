@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use mtop::{
+    history,
     model::{Backend, Price, RequestMetric, Store, Usage},
     poller,
     proxy::{Proxy, Timeouts},
@@ -76,6 +77,11 @@ struct Args {
     /// Seconds allowed to read the client request body before forwarding starts.
     #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u32).range(1..=86400), global = true)]
     body_timeout: u32,
+    /// Record completed requests to a SQLite file. Off unless given. With no
+    /// path, uses the default under XDG_DATA_HOME or ~/.local/share.
+    /// Only numbers and bounded labels are written: no prompts, no credentials.
+    #[arg(long, global = true, num_args = 0..=1, default_missing_value = "")]
+    history: Option<PathBuf>,
     /// Metrics-only is always enabled in v0.1; accepted for explicit invocation.
     #[arg(long)]
     metrics_only: bool,
@@ -86,6 +92,12 @@ enum Command {
     /// List AI tools and provider keys found on this machine, and the command
     /// that observes them. Reads no file contents and no key values.
     Scan,
+    /// Summarize recorded requests per model. Needs an earlier run with --history.
+    History {
+        /// Days back to include. 0 means everything.
+        #[arg(long, default_value_t = 30)]
+        days: u32,
+    },
     /// Run a command with its base URLs pointed at MTop, then report what it
     /// used. Without --upstream, the upstreams come from `scan`.
     Run {
@@ -133,6 +145,19 @@ async fn main() -> anyhow::Result<()> {
         scan::scan().print();
         return Ok(());
     }
+    // An empty --history value means "use the default path".
+    let history_path = args.history.as_ref().map(|p| {
+        if p.as_os_str().is_empty() {
+            history::default_path()
+        } else {
+            p.clone()
+        }
+    });
+    if let Some(Command::History { days }) = args.command {
+        let path = history_path.unwrap_or_else(history::default_path);
+        history::print_summary(&history::summary(&path, days)?, days);
+        return Ok(());
+    }
     anyhow::ensure!(
         args.listen.ip().is_loopback(),
         "proxy listener must be a loopback address"
@@ -169,6 +194,9 @@ async fn main() -> anyhow::Result<()> {
         );
     }
     let store = Store::shared(args.capacity as usize);
+    if let Some(path) = &history_path {
+        store.lock().unwrap().history = Some(history::open(path)?);
+    }
     if let Some(Command::Run { argv }) = &args.command {
         let timeouts = Timeouts {
             body: Duration::from_secs(args.body_timeout as u64),
