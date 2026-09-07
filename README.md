@@ -68,7 +68,8 @@ No tokenization estimates are made. Polling cannot recover per-request usage.
 Request bodies are capped at 4 MiB; parser lines/events at 256 KiB; upstream concurrency at 16;
 backend response bodies at 2 MiB; retained model names at 120 characters.
 Oversized parser records increase `Parse`; forwarding continues. Large prompts exceeding the request limit receive HTTP 413.
-Requests time out after 600 seconds (body intake: 30 seconds). Very long jobs need configurable limits in a later iteration.
+Requests time out after 600 seconds (body intake: 30 seconds). Change both with `--request-timeout <SECONDS>`
+and `--body-timeout <SECONDS>`, each accepting 1 to 86400.
 Only numeric metadata and bounded model/provider/status labels remain in the store. Parsing transiently touches plaintext;
 this is not secure memory erasure or protection from OS swap/core dumps. No persistence or analytics service is enabled.
 Closing MTop also closes its active proxy connections.

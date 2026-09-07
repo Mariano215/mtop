@@ -5,7 +5,10 @@ use axum::{
     response::Response,
     routing::post,
 };
-use mtop::{model::Store, proxy::Proxy};
+use mtop::{
+    model::Store,
+    proxy::{Proxy, Timeouts},
+};
 use std::time::Duration;
 
 async fn bind(router: Router) -> (String, tokio::task::JoinHandle<()>) {
@@ -42,7 +45,7 @@ async fn preserves_stream_body_auth_status_and_usage() {
     let (url, upstream_task) = bind(upstream).await;
     let store = Store::shared(10);
     let (proxy_url, proxy_task) = bind(
-        Proxy::new(store.clone(), &url, "openai", vec![])
+        Proxy::new(store.clone(), &url, "openai", vec![], Timeouts::default())
             .unwrap()
             .router(),
     )
@@ -81,7 +84,7 @@ async fn preserves_http_error() {
     let (url, u) = bind(upstream).await;
     let s = Store::shared(10);
     let (url, p) = bind(
-        Proxy::new(s.clone(), &url, "openai", vec![])
+        Proxy::new(s.clone(), &url, "openai", vec![], Timeouts::default())
             .unwrap()
             .router(),
     )
@@ -106,7 +109,12 @@ async fn does_not_follow_redirect() {
     });
     let (url, u) = bind(upstream).await;
     let s = Store::shared(10);
-    let (url, p) = bind(Proxy::new(s, &url, "openai", vec![]).unwrap().router()).await;
+    let (url, p) = bind(
+        Proxy::new(s, &url, "openai", vec![], Timeouts::default())
+            .unwrap()
+            .router(),
+    )
+    .await;
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()
@@ -122,9 +130,15 @@ async fn does_not_follow_redirect() {
 async fn rejects_oversized_request_before_forwarding() {
     let s = Store::shared(10);
     let (url, p) = bind(
-        Proxy::new(s.clone(), "http://127.0.0.1:1", "openai", vec![])
-            .unwrap()
-            .router(),
+        Proxy::new(
+            s.clone(),
+            "http://127.0.0.1:1",
+            "openai",
+            vec![],
+            Timeouts::default(),
+        )
+        .unwrap()
+        .router(),
     )
     .await;
     let r = reqwest::Client::new()
@@ -136,4 +150,37 @@ async fn rejects_oversized_request_before_forwarding() {
     assert_eq!(r.status(), StatusCode::PAYLOAD_TOO_LARGE);
     assert_eq!(s.lock().unwrap().completed, 0);
     p.abort();
+}
+
+#[tokio::test]
+async fn honors_configured_upstream_timeout() {
+    let upstream = Router::new().fallback(|| async {
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        "never sent"
+    });
+    let (url, u) = bind(upstream).await;
+    let s = Store::shared(10);
+    let timeouts = Timeouts {
+        upstream: Duration::from_millis(150),
+        ..Timeouts::default()
+    };
+    let (url, p) = bind(
+        Proxy::new(s.clone(), &url, "openai", vec![], timeouts)
+            .unwrap()
+            .router(),
+    )
+    .await;
+    let started = std::time::Instant::now();
+    let r = reqwest::Client::new()
+        .post(url)
+        .body("{}")
+        .send()
+        .await
+        .unwrap();
+    // The default is 600 s, so finishing this fast proves the configured value is used.
+    assert_eq!(r.status(), StatusCode::BAD_GATEWAY);
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert_eq!(s.lock().unwrap().completed, 1);
+    p.abort();
+    u.abort();
 }

@@ -20,6 +20,24 @@ use std::{
 };
 use tokio::sync::Semaphore;
 
+/// Wall-clock limits for one forwarded request.
+#[derive(Clone, Copy)]
+pub struct Timeouts {
+    /// Reading the client request body before forwarding starts.
+    pub body: Duration,
+    /// The whole upstream exchange, including a long streamed response.
+    pub upstream: Duration,
+}
+
+impl Default for Timeouts {
+    fn default() -> Self {
+        Self {
+            body: Duration::from_secs(30),
+            upstream: Duration::from_secs(600),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Proxy {
     store: Shared,
@@ -29,6 +47,7 @@ pub struct Proxy {
     prices: Arc<Vec<Price>>,
     sequence: Arc<AtomicU64>,
     slots: Arc<Semaphore>,
+    timeouts: Timeouts,
 }
 
 impl Proxy {
@@ -37,6 +56,7 @@ impl Proxy {
         upstream: &str,
         provider: &str,
         prices: Vec<Price>,
+        timeouts: Timeouts,
     ) -> anyhow::Result<Self> {
         let url = reqwest::Url::parse(upstream)?;
         anyhow::ensure!(
@@ -58,6 +78,7 @@ impl Proxy {
             prices: Arc::new(prices),
             sequence: Arc::new(AtomicU64::new(1)),
             slots: Arc::new(Semaphore::new(16)),
+            timeouts,
         })
     }
     pub fn router(self) -> Router {
@@ -132,9 +153,7 @@ async fn forward(State(p): State<Proxy>, request: Request) -> Response {
         return (StatusCode::SERVICE_UNAVAILABLE, "MTop concurrency limit").into_response();
     };
     let (parts, body) = request.into_parts();
-    let body = match tokio::time::timeout(Duration::from_secs(30), to_bytes(body, 4 * 1024 * 1024))
-        .await
-    {
+    let body = match tokio::time::timeout(p.timeouts.body, to_bytes(body, 4 * 1024 * 1024)).await {
         Ok(Ok(bytes)) => bytes,
         Ok(Err(_)) => {
             return (StatusCode::PAYLOAD_TOO_LARGE, "MTop request limit: 4 MiB").into_response();
@@ -178,7 +197,7 @@ async fn forward(State(p): State<Proxy>, request: Request) -> Response {
         .request(parts.method, &url)
         .headers(headers)
         .body(body)
-        .timeout(Duration::from_secs(600))
+        .timeout(p.timeouts.upstream)
         .send()
         .await;
     let upstream = match result {

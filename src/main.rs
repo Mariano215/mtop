@@ -2,10 +2,10 @@ use clap::Parser;
 use mtop::{
     model::{Backend, Price, RequestMetric, Store, Usage},
     poller,
-    proxy::Proxy,
+    proxy::{Proxy, Timeouts},
     ui,
 };
-use std::{io::IsTerminal, net::SocketAddr, path::PathBuf};
+use std::{io::IsTerminal, net::SocketAddr, path::PathBuf, time::Duration};
 
 #[derive(Parser)]
 #[command(
@@ -37,6 +37,12 @@ struct Args {
     prices: Option<PathBuf>,
     #[arg(long, default_value_t = 1000, value_parser = clap::value_parser!(u16).range(1..=10000))]
     capacity: u16,
+    /// Seconds allowed for the whole upstream exchange, including a long streamed response.
+    #[arg(long, default_value_t = 600, value_parser = clap::value_parser!(u32).range(1..=86400))]
+    request_timeout: u32,
+    /// Seconds allowed to read the client request body before forwarding starts.
+    #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u32).range(1..=86400))]
+    body_timeout: u32,
     /// Metrics-only is always enabled in v0.1; accepted for explicit invocation.
     #[arg(long)]
     metrics_only: bool,
@@ -138,7 +144,12 @@ async fn main() -> anyhow::Result<()> {
     );
     let server = if !args.demo {
         if let Some(upstream) = args.upstream {
-            let router = Proxy::new(store.clone(), &upstream, &args.provider, prices)?.router();
+            let timeouts = Timeouts {
+                body: Duration::from_secs(args.body_timeout as u64),
+                upstream: Duration::from_secs(args.request_timeout as u64),
+            };
+            let router =
+                Proxy::new(store.clone(), &upstream, &args.provider, prices, timeouts)?.router();
             let listener = tokio::net::TcpListener::bind(args.listen).await?;
             Some(tokio::spawn(
                 async move { axum::serve(listener, router).await },
