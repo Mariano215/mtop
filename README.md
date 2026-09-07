@@ -1,3 +1,19 @@
+```
+╔════════════════════════════════════════════════════════════════════╗
+║                                                                    ║
+║               ███╗   ███╗████████╗ ██████╗ ██████╗                 ║
+║               ████╗ ████║╚══██╔══╝██╔═══██╗██╔══██╗                ║
+║               ██╔████╔██║   ██║   ██║   ██║██████╔╝                ║
+║               ██║╚██╔╝██║   ██║   ██║   ██║██╔═══╝                 ║
+║               ██║ ╚═╝ ██║   ██║   ╚██████╔╝██║                     ║
+║               ╚═╝     ╚═╝   ╚═╝    ╚═════╝ ╚═╝                     ║
+║                                                                    ║
+║   M O D E L   T E L E M E T R Y   C O N S O L E                    ║
+╠════════════════════════════════════════════════════════════════════╣
+║  v0.1  ·  RUST + RATATUI  ·  LOOPBACK ONLY  ·  NO PERSISTENCE      ║
+╚════════════════════════════════════════════════════════════════════╝
+```
+
 # MTop
 
 A Rust terminal console for local model telemetry and opt-in API request observation.
@@ -18,6 +34,36 @@ cargo run --locked
 
 The normal mode polls Ollama at `http://127.0.0.1:11434`. An unavailable service is displayed explicitly.
 `--demo` uses synthetic data and makes no network calls. `--once` emits JSON and exits.
+
+## Keys
+
+The dashboard reads these keys. There are no other bindings.
+
+| Key | Action |
+|-----|--------|
+| `j` / `Down` | Move the selection down |
+| `k` / `Up` | Move the selection up |
+| `Space` | Freeze the display. Collection continues in the background |
+| `q` / `Esc` | Quit and restore the terminal |
+| `Ctrl+C` | Quit and restore the terminal |
+
+## Options
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--demo` | off | Synthetic data, no network calls |
+| `--once` | off | Print one JSON snapshot and exit. Cannot run with `--upstream` |
+| `--ollama <URL>` | `http://127.0.0.1:11434` | Ollama origin to poll |
+| `--no-ollama` | off | Skip Ollama polling |
+| `--vllm <URL>` | none | vLLM origin for server-level metrics |
+| `--upstream <ORIGIN>` | none | Turn on the proxy and forward to this origin. No `/v1` suffix |
+| `--listen <ADDR>` | `127.0.0.1:8088` | Proxy listen address. Must be loopback |
+| `--provider <NAME>` | `openai` | Parser to use: `openai`, `anthropic` or `ollama` |
+| `--prices <FILE>` | none | JSON price table, see [Prices](#prices) |
+| `--capacity <N>` | `1000` | Retained request rows, 1 to 10000 |
+| `--request-timeout <SECONDS>` | `600` | Whole upstream exchange, 1 to 86400 |
+| `--body-timeout <SECONDS>` | `30` | Client body intake, 1 to 86400 |
+| `--metrics-only` | always on | Accepted for explicit invocation. v0.1 has no other mode |
 
 ## Observe requests
 
@@ -94,4 +140,13 @@ These numbers are examples, not provider prices. Supply rates applicable to your
 Estimates exclude taxes, service/tool charges, tiered context rates, special cache TTL pricing, discounts and subscriptions.
 Anthropic input excludes separately reported cache tokens; OpenAI cached tokens are a subset of input tokens.
 
-See [the refined specification](docs/SPEC.md) and [the Mac/Codex handoff](docs/HANDOFF.md).
+## More
+
+- [The refined specification](docs/SPEC.md)
+- [The Mac/Codex handoff](docs/HANDOFF.md)
+- [Validation notes](docs/VALIDATION.md)
+
+## License
+
+No license file is present. Until one is added, default copyright applies and
+others have no right to use, copy or redistribute this code.
