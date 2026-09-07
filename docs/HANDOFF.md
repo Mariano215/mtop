@@ -5,7 +5,7 @@ The handoff ZIP contains the full source tree and `mtop.bundle` with a local imp
 After extracting the ZIP, run from the extracted `mtop-handoff` folder:
 
 ```sh
-git clone mtop.bundle mtop-work
+git clone -b codex/rust-mvp mtop.bundle mtop-work
 cd mtop-work
 git remote set-url origin https://github.com/Mariano215/mtop.git
 git push -u origin codex/rust-mvp
