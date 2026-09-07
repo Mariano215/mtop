@@ -62,42 +62,46 @@ observable from your machine by MTop or by anything else. That is a deliberate s
 
 ## What it looks like
 
-A live capture, 120 columns, on a machine with Claude Code, Codex, Ollama,
+A live capture, 130 columns, on a machine with Claude Code, Codex, Ollama,
 Cursor and Gemini CLI installed and no price table:
 
 ```text
-┌ MTop 0.1 • LIVE / METRICS ONLY ──────────────────────────────────────────────────────────────────────────────────────┐
-│Completed 442  |  Priced estimate —  |  Unpriced 442 (no --prices given)  |  Evicted 0                                │
-│telemetry receiver http://127.0.0.1:4318 (mtop setup)                                                                 │
-│Claude Code  watching ~/.claude/projects, 8 active                                                                    │
-│Codex        watching ~/.codex/sessions, 0 active                                                                     │
-│Ollama       installed; run `mtop run -- <your ollama client>`                                                        │
-│Continue     installed; set apiBase per model in ~/.continue/config.json                                              │
-│Cursor       installed; talks to Cursor's own backend; not observable locally                                         │
-│Gemini CLI   installed; run `mtop setup`                                                                              │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-┌ Backends • polling does not observe individual requests ─────────────────────────────────────────────────────────────┐
-│Source    Status        Model                                                  VRAM         Running  Waiting  KV max  │
-│ollama    idle                                                                 —            —        —        —       │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-┌ Observed requests • sort: newest • Cache = tokens read from or written to prompt cache • — means unavailable ────────┐
-│Provider     Model                     Status     Dur ms   Input    Cache    Output   Tools                           │
-│claude-code  claude-opus-4-7           tool_use   1640.0   1        63313    69       1                               │
-│claude-code  claude-opus-4-7           tool_use   62855.0  1        57925    5314     0                               │
-│claude-code  claude-opus-4-7           tool_use   2348.0   1        45318    227      1                               │
-│claude-code  claude-opus-4-7           tool_use   2961.0   6        33932    209      0                               │
-│claude-code  claude-opus-4-7           tool_use   2532.0   1        52038    69       1                               │
-│claude-code  claude-opus-4-7           tool_use   17686.0  1        50285    1679     0                               │
-│claude-code  claude-opus-4-7           tool_use   53893.0  1        46401    3755     0                               │
-│claude-code  claude-opus-4-7           tool_use   2491.0   1        42570    89       1                               │
-│claude-code  claude-opus-4-7           tool_use   5245.0   1        34258    89       1                               │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-┌────────────────────────────────────────────────────────────────────────────────��─────────────────────────────────────
-│↑/↓ or j/k select • s sort newest/slowest/biggest • Space freeze display • q/Esc quit • No prompts, credentials or too│
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ MTop 0.1 • LIVE / METRICS ONLY ────────────────────────────────────────────────────────────────────────────────────────────────┐
+│Completed 448  |  Priced estimate —  |  Unpriced 448 (no --prices given)  |  Evicted 0                                          │
+│Last 5 min: 0 tokens/min  |  — /hour  |  453 tool calls  |  6 models  |  25 sessions                                            │
+│telemetry receiver http://127.0.0.1:4318 (mtop setup)                                                                           │
+│Claude Code  watching ~/.claude/projects, 1 active                                                                              │
+│Codex        watching ~/.codex/sessions, 0 active                                                                               │
+│Ollama       installed; run `mtop run -- <your ollama client>`                                                                  │
+│Continue     installed; set apiBase per model in ~/.continue/config.json                                                        │
+│Cursor       installed; talks to Cursor's own backend; not observable locally                                                   │
+│Gemini CLI   installed; run `mtop setup`                                                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Backends • polling does not observe individual requests • Tab for more ────────────────────────────────────────────────────────┐
+│Source    Status        Model                                                            VRAM         Running  Waiting  KV max  │
+│ollama    idle                                                                           —            —        —        —       │
+│                                                                                                                                │
+│                                                                                                                                │
+│                                                                                                                                │
+│                                                                                                                                │
+│                                                                                                                                │
+└──────────────────────────────────────────────────────────────────────────��─────────────────────────────────────────────────────
+┌ Observed requests • sort: newest • Hit = cache read share • Ctx = context used • — means unavailable ──────────────────────────┐
+│Provider    Model                    Status    Src  Dur ms   Input   Cache   Hit  Output  Reason  Tools HTTP                    │
+│claude-code claude-opus-4-7          tool_use  main 2532.0   1       52038   97%  69      —       1     —                       │
+│claude-code claude-opus-4-7          tool_use  main 17686.0  1       50285   92%  1679    1093    0     —                       │
+│claude-code claude-opus-4-7          tool_use  main 53893.0  1       46401   92%  3755    3568    0     —                       │
+│claude-code claude-opus-4-7          tool_use  main 2491.0   1       42570   80%  89      —       1     —                       │
+│claude-code claude-opus-4-7          tool_use  main 5245.0   1       34258   85%  89      —       1     —                       │
+│claude-code claude-opus-4-7          tool_use  main 2362.0   6       28983   74%  125     34      0     —                       │
+│claude-code claude-sonnet-5          logged    suba 3098.0   2       65174   99%  1       —       0     —                       │
+│claude-code claude-sonnet-5          logged    suba 1578.0   2       64366   97%  6       —       0     —                       │
+│claude-code claude-sonnet-5          logged    suba 9763.0   2       62344   99%  2       —       0     —                       │
+│claude-code claude-sonnet-5          logged    suba 1551.0   2       61461   93%  3       —       0     —                       │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│↑/↓ j/k select • Enter detail • Tab panel: backends, tools, models, projects, sessions, environment • s sort • Space freeze • q │
+└────────��───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ```
 
 ## Install

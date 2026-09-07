@@ -292,6 +292,9 @@ async fn main() -> anyhow::Result<()> {
         for (name, route) in scan::scan().found {
             s.source(name, format!("installed; {route}"));
         }
+        for (k, v) in scan::environment() {
+            s.environment(&k, &v);
+        }
     }
     if args.demo {
         let mut s = store.lock().unwrap();

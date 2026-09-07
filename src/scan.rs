@@ -5,7 +5,7 @@
 //! variable's value, because these paths sit beside credentials. Nothing found
 //! here reaches the telemetry store, the JSON snapshot or any log.
 
-use std::{env, path::PathBuf};
+use std::{env, path::PathBuf, process::Command};
 
 /// A client that talks to a model API and can be pointed at a proxy port.
 struct Tool {
@@ -161,6 +161,103 @@ fn keys_set(keys: &[&'static str]) -> Vec<&'static str> {
         .collect()
 }
 
+/// Versions, policies and settings a user would want on screen. Versions come
+/// from `<cli> --version`. Settings come from named keys in the tools' own
+/// settings files; no other key is read and nothing found here is printed
+/// beyond these labels.
+pub fn environment() -> Vec<(String, String)> {
+    let mut out = vec![];
+    for (name, cli) in [
+        ("Claude Code", "claude"),
+        ("Codex", "codex"),
+        ("Gemini CLI", "gemini"),
+        ("Ollama", "ollama"),
+    ] {
+        if !on_path(cli) {
+            continue;
+        }
+        let version = Command::new(cli)
+            .arg("--version")
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| {
+                // Ollama prints its version on stderr behind a connection
+                // warning; keep the last line that names a version.
+                let text = format!(
+                    "{}\n{}",
+                    String::from_utf8_lossy(&o.stdout),
+                    String::from_utf8_lossy(&o.stderr)
+                );
+                text.lines()
+                    .rfind(|l| {
+                        l.chars().any(|c| c.is_ascii_digit())
+                            && !l.starts_with("Warning: could not")
+                    })
+                    .map(|l| {
+                        l.trim()
+                            .trim_start_matches("Warning: client version is ")
+                            .to_string()
+                    })
+            })
+            .unwrap_or_else(|| "unknown".into());
+        out.push((format!("{name} version"), version));
+    }
+    let Some(home) = home() else {
+        return out;
+    };
+    let json = |path: PathBuf| -> Option<serde_json::Value> {
+        serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
+    };
+    if let Some(v) = json(home.join(".claude").join("settings.json")) {
+        for (key, label) in [
+            ("model", "Claude Code model"),
+            ("effortLevel", "Claude Code effort"),
+        ] {
+            if let Some(value) = v[key].as_str() {
+                out.push((label.into(), value.into()));
+            }
+        }
+        let env = &v["env"];
+        let on = env["CLAUDE_CODE_ENABLE_TELEMETRY"].as_str() == Some("1");
+        let endpoint = env["OTEL_EXPORTER_OTLP_ENDPOINT"].as_str().unwrap_or("");
+        out.push((
+            "Claude Code telemetry".into(),
+            if on && !endpoint.is_empty() {
+                format!("on, {endpoint}")
+            } else if on {
+                "on, default endpoint".into()
+            } else {
+                "off (run `mtop setup`)".into()
+            },
+        ));
+    }
+    if let Ok(toml) = std::fs::read_to_string(home.join(".codex").join("config.toml")) {
+        out.push((
+            "Codex telemetry".into(),
+            if toml.contains("# mtop-begin") {
+                "on, mtop block".into()
+            } else if toml.contains("[otel]") {
+                "configured outside mtop".into()
+            } else {
+                "off (run `mtop setup`)".into()
+            },
+        ));
+    }
+    if let Some(v) = json(home.join(".gemini").join("settings.json")) {
+        let t = &v["telemetry"];
+        out.push((
+            "Gemini CLI telemetry".into(),
+            match (t["enabled"].as_bool(), t["otlpEndpoint"].as_str()) {
+                (Some(true), Some(e)) => format!("on, {e}"),
+                (Some(true), None) => "on, default endpoint".into(),
+                _ => "off (run `mtop setup`)".into(),
+            },
+        ));
+    }
+    out
+}
+
 /// One line per finding, plus the upstream arguments the findings imply.
 pub struct Report {
     pub tools: Vec<String>,
@@ -270,6 +367,14 @@ impl Report {
             println!("Provider keys set:");
             for p in &self.providers {
                 println!("  {p}");
+            }
+            println!();
+        }
+        let env = environment();
+        if !env.is_empty() {
+            println!("Environment:");
+            for (k, v) in &env {
+                println!("  {k:<28} {v}");
             }
             println!();
         }
