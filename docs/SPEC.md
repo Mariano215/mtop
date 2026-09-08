@@ -107,10 +107,10 @@ Future payload inspection requires capture scoping and redaction before retentio
 
 ## 8. Roadmap
 
-1. Delivered: pollers, proxy, transcript tail, OTLP receiver, `setup`, history, five-target releases and installers.
+1. Delivered: pollers, proxy, transcript tail, OTLP receiver, `setup`, history, five-target releases and installers,
+   a bundled price table ([`prices.json`](../prices.json), sourced 2026-09-07, see [Prices](../README.md#prices)).
 2. Provider fixtures for OpenAI Responses and tool events; explicit trace ingestion with parent and span IDs.
-3. A bundled price table with a documented source and date, so cost is known without `--prices`.
-4. Passive Linux capture behind a separate optional collector, for one documented TLS and runtime combination.
+3. Passive Linux capture behind a separate optional collector, for one documented TLS and runtime combination.
 
 ## Technical references
 

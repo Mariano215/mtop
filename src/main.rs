@@ -9,6 +9,7 @@ use mtop::{
 use std::{io::IsTerminal, net::SocketAddr, path::PathBuf, time::Duration};
 
 const PROVIDERS: [&str; 3] = ["openai", "anthropic", "ollama"];
+const BUNDLED_PRICES: &str = include_str!("../prices.json");
 
 /// Split PROVIDER=URL. A bare URL, or a prefix that is not a known provider,
 /// falls back to the --provider default.
@@ -208,7 +209,7 @@ async fn main() -> anyhow::Result<()> {
     let prices: Vec<Price> = if let Some(path) = args.prices {
         serde_json::from_slice(&std::fs::read(path)?)?
     } else {
-        vec![]
+        serde_json::from_str(BUNDLED_PRICES).expect("bundled prices.json must parse")
     };
     for p in &prices {
         anyhow::ensure!(
@@ -305,16 +306,22 @@ async fn main() -> anyhow::Result<()> {
             vram_bytes: Some(8 * 1024 * 1024 * 1024),
             ..Default::default()
         });
+        let usage = Usage {
+            input: Some(8420),
+            output: Some(412),
+            ..Default::default()
+        };
+        let estimated_cost_usd = prices
+            .iter()
+            .find(|p| p.model == "claude-sonnet-5")
+            .and_then(|p| p.cost("anthropic", &usage));
         s.finish(RequestMetric {
             id: 1,
-            provider: "demo".into(),
-            model: "demo-cloud-model".into(),
+            provider: "anthropic".into(),
+            model: "claude-sonnet-5".into(),
             status: "synthetic".into(),
-            usage: Usage {
-                input: Some(8420),
-                output: Some(412),
-                ..Default::default()
-            },
+            usage,
+            estimated_cost_usd,
             ttft_ms: Some(320.),
             tool_calls: 2,
             ..Default::default()
@@ -455,6 +462,20 @@ mod tests {
         assert_eq!(
             split_upstream("https://x.test/?a=b", "ollama"),
             ("ollama", "https://x.test/?a=b")
+        );
+    }
+
+    #[test]
+    fn bundled_prices_parse_and_cover_the_demo_model() {
+        let prices: Vec<mtop::model::Price> =
+            serde_json::from_str(super::BUNDLED_PRICES).expect("bundled prices.json must parse");
+        assert!(!prices.is_empty());
+        for p in &prices {
+            assert!(p.input_per_million >= 0. && p.output_per_million >= 0.);
+        }
+        assert!(
+            prices.iter().any(|p| p.model == "claude-sonnet-5"),
+            "--demo prices its synthetic request as claude-sonnet-5"
         );
     }
 }

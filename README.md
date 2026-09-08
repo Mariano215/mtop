@@ -63,11 +63,11 @@ observable from your machine by MTop or by anything else. That is a deliberate s
 ## What it looks like
 
 A live capture, 130 columns, on a machine with Claude Code, Codex, Ollama,
-Cursor and Gemini CLI installed and no price table:
+Cursor and Gemini CLI installed, priced from the bundled table:
 
 ```text
 ┌ MTop 0.2.0 • LIVE / METRICS ONLY ────────────────────────────────────────────────────────────────────────────────────────────────┐
-│Completed 448  |  Priced estimate —  |  Unpriced 448 (no --prices given)  |  Evicted 0                                          │
+│Completed 448  |  Priced estimate $9.184000  |  Unpriced 210 (model not in the bundled or --prices table)  |  Evicted 0         │
 │Last 5 min: 0 tokens/min  |  — /hour  |  453 tool calls  |  6 models  |  25 sessions                                            │
 │telemetry receiver http://127.0.0.1:4318 (mtop setup)                                                                           │
 │Claude Code  watching ~/.claude/projects, 1 active                                                                              │
@@ -191,7 +191,7 @@ The dashboard reads these keys. There are no other bindings.
 | `--upstream <SPEC>` | none | Turn on a proxy listener. Repeatable. `URL` or `PROVIDER=URL`. No `/v1` suffix |
 | `--listen <ADDR>` | `127.0.0.1:8088` | First proxy port. Must be loopback. Later upstreams count up from here |
 | `--provider <NAME>` | `openai` | Parser for any `--upstream` given as a bare URL: `openai`, `anthropic` or `ollama` |
-| `--prices <FILE>` | none | JSON price table, see [Prices](#prices) |
+| `--prices <FILE>` | [bundled table](prices.json) | Replace the bundled price table, see [Prices](#prices) |
 | `--capacity <N>` | `1000` | Retained request rows, 1 to 10000 |
 | `--request-timeout <SECONDS>` | `600` | Whole upstream exchange, 1 to 86400 |
 | `--body-timeout <SECONDS>` | `30` | Client body intake, 1 to 86400 |
@@ -418,7 +418,13 @@ Closing MTop also closes its active proxy connections.
 
 ## Prices
 
-Use `--prices path/to/prices.json`. The file contains a JSON array:
+MTop ships with [`prices.json`](prices.json) bundled into the binary and applied by default: current
+Claude, GPT and Gemini flagship models, pulled from each provider's own pricing page on 2026-09-07
+(Anthropic: [claude.com/pricing](https://claude.com/pricing); OpenAI: [developers.openai.com/api/docs/pricing](https://developers.openai.com/api/docs/pricing);
+Google: [ai.google.dev/gemini-api/docs/pricing](https://ai.google.dev/gemini-api/docs/pricing)). A model
+not in that list, an older snapshot, or a custom deployment shows `Unpriced`, never a fake number.
+
+To override or extend it, use `--prices path/to/prices.json` with your own file, same shape:
 
 ```json
 [
@@ -432,8 +438,10 @@ Use `--prices path/to/prices.json`. The file contains a JSON array:
 ]
 ```
 
-These numbers are examples, not provider prices. Supply rates applicable to your account and model.
-Estimates exclude taxes, service/tool charges, tiered context rates, special cache TTL pricing, discounts and subscriptions.
+`--prices` replaces the bundled table entirely, it does not merge with it. These numbers are prices as
+published on the date above, not a live feed; providers change prices without notice, so verify against
+your own account before relying on the estimate. Estimates exclude taxes, service/tool charges, tiered
+context rates, special cache TTL pricing, discounts and subscriptions.
 Anthropic input excludes separately reported cache tokens; OpenAI cached tokens are a subset of input tokens.
 
 ## More
@@ -452,8 +460,8 @@ the order they matter:
 - No Gemini parser on the proxy. Gemini CLI reports through `mtop setup`
   telemetry; a raw Gemini API client pointed at the proxy forwards but is not
   parsed.
-- Pricing is manual. There is no bundled catalog yet, so cost is unknown
-  until you supply a `--prices` file.
+- The bundled price table covers current Claude, GPT and Gemini flagships
+  only; older snapshots and other providers still need a `--prices` file.
 - No live totals while `run` has a child attached; the summary comes at exit.
 
 ## Contributing

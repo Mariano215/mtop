@@ -305,6 +305,20 @@ impl Store {
         let minutes = RATE_WINDOW.as_secs_f64() / 60.;
         (tokens as f64 / minutes, cost / minutes * 60.)
     }
+    /// Tokens per bucket over the recent window, oldest first. `buckets * bucket`
+    /// sets how far back it looks; a bucket with no requests reads zero, not gap.
+    pub fn token_sparkline(&self, buckets: usize, bucket: Duration) -> Vec<u64> {
+        let now = Instant::now();
+        let mut out = vec![0u64; buckets];
+        for (at, tokens, _) in self.recent.iter() {
+            let elapsed = now.saturating_duration_since(*at).as_secs_f64();
+            let slot = (elapsed / bucket.as_secs_f64()) as usize;
+            if slot < buckets {
+                out[buckets - 1 - slot] += tokens;
+            }
+        }
+        out
+    }
     pub fn tool(&mut self, name: &str, duration_ms: Option<f64>, ok: bool) {
         if self.tools.len() >= 256 && !self.tools.contains_key(name) {
             return;
@@ -423,6 +437,10 @@ mod tests {
         assert_eq!(s.by_project["p"].cache, 600);
         assert_eq!(s.by_session["s"].unpriced, 2);
         assert!(s.rates().0 > 0.);
+        let spark = s.token_sparkline(5, Duration::from_secs(60));
+        assert_eq!(spark.len(), 5);
+        assert_eq!(spark.last(), Some(&820)); // two requests, 410 tokens each, in the latest bucket
+        assert_eq!(&spark[..4], &[0, 0, 0, 0]);
         s.tool("Bash", Some(10.), true);
         s.tool("Bash", None, false);
         assert_eq!(

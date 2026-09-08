@@ -39,11 +39,15 @@ One synthetic request and one synthetic backend, no network. The title says
 leave.
 
 ```text
-┌ MTop 0.1 • DEMO / SYNTHETIC ───────────────────────────────────────────────────────────────────────────────────────────────────┐
-│Completed 1  |  Priced estimate —  |  Unpriced 1 (no --prices given)  |  Evicted 0                                              │
-│Last 5 min: 1766 tokens/min  |  — /hour  |  0 tool calls  |  1 models  |  0 sessions                                            │
+┌ MTop 0.2.0 • DEMO / SYNTHETIC ─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│Completed 1  |  Priced estimate $0.020960  |  Unpriced 0  |  Evicted 0                                                          │
+│Last 5 min: 1766 tokens/min  |  $0.2515/hour  |  0 tool calls  |  1 models  |  0 sessions                                       │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+The synthetic request is priced from the bundled table (below), using the
+real `claude-sonnet-5` rate, so the number is a realistic example, not a
+placeholder.
 
 ## 3. Find out what is on this machine
 
@@ -134,8 +138,8 @@ starting, before any new call was made: the last hour of Claude Code and
 Codex transcripts is already on it.
 
 ```text
-┌ MTop 0.1 • LIVE / METRICS ONLY ────────────────────────────────────────────────────────────────────────────────────────────────┐
-│Completed 448  |  Priced estimate —  |  Unpriced 448 (no --prices given)  |  Evicted 0                                          │
+┌ MTop 0.2.0 • LIVE / METRICS ONLY ──────────────────────────────────────────────────────────────────────────────────────────────┐
+│Completed 448  |  Priced estimate $9.184000  |  Unpriced 210 (model not in the bundled or --prices table)  |  Evicted 0         │
 │Last 5 min: 0 tokens/min  |  — /hour  |  453 tool calls  |  6 models  |  25 sessions                                            │
 │telemetry receiver http://127.0.0.1:4318 (mtop setup)                                                                           │
 │Claude Code  watching ~/.claude/projects, 1 active                                                                              │
@@ -175,8 +179,10 @@ Codex transcripts is already on it.
 How to read it, top to bottom:
 
 - **Header, line 1.** Requests seen, the priced estimate, and how many had no
-  price. With no `--prices` file the estimate shows `—`, never a fake zero.
-  `Evicted` turns red if the table dropped rows.
+  price. MTop ships a [bundled price table](../README.md#prices) for current
+  Claude, GPT and Gemini models, applied by default; older or unlisted models
+  stay unpriced. With nothing priced at all the estimate shows `—`, never a
+  fake zero. `Evicted` turns red if the table dropped rows.
 - **Header, line 2.** Tokens per minute and dollars per hour over the last
   five minutes, tool calls, models and sessions seen. History read at startup
   is not counted in the rate.

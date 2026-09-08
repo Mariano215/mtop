@@ -111,10 +111,28 @@ fn ordered(s: &Store, sort: Sort) -> Vec<&RequestMetric> {
     rows
 }
 
+/// Render bucket counts as one block character per bucket, scaled to the
+/// tallest bucket. All-zero buckets render as the flat baseline, not a gap.
+fn sparkline(buckets: &[u64]) -> String {
+    const BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    let max = buckets.iter().copied().max().unwrap_or(0);
+    buckets
+        .iter()
+        .map(|&v| {
+            if max == 0 {
+                BLOCKS[0]
+            } else {
+                let idx = ((v as f64 / max as f64) * (BLOCKS.len() - 1) as f64).round() as usize;
+                BLOCKS[idx.min(BLOCKS.len() - 1)]
+            }
+        })
+        .collect()
+}
+
 pub fn draw(f: &mut Frame, s: &Store, v: View) {
     let (tokens_per_min, cost_per_hour) = s.rates();
     // One line per proxy listener, source, limit and the rate line.
-    let header_lines = 2
+    let header_lines = 3
         + s.listeners.len().min(4) as u16
         + s.sources.len().min(8) as u16
         + s.limits.len().min(4) as u16
@@ -152,7 +170,7 @@ pub fn draw(f: &mut Frame, s: &Store, v: View) {
                 },
                 s.unpriced,
                 if nothing_priced {
-                    " (no --prices given)"
+                    " (model not in the bundled or --prices table)"
                 } else {
                     ""
                 },
@@ -178,6 +196,10 @@ pub fn draw(f: &mut Frame, s: &Store, v: View) {
             s.tools.values().map(|t| t.calls).sum::<u64>(),
             s.by_model.len(),
             s.by_session.len(),
+        )),
+        Line::raw(format!(
+            "Tokens/min, last 10m: {}",
+            sparkline(&s.token_sparkline(40, Duration::from_secs(15)))
         )),
     ];
     for line in s.listeners.iter().take(4) {
