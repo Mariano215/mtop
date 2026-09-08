@@ -347,7 +347,7 @@ async fn main() -> anyhow::Result<()> {
             store.lock().unwrap().backend(rows, source);
         }
         if !args.no_tail {
-            tail::poll_all(&mut tail::Tailer::default(), &store);
+            tail::poll_all(&mut tail::Tailer::default(), &store, &prices);
         }
     } else {
         anyhow::ensure!(
@@ -361,7 +361,7 @@ async fn main() -> anyhow::Result<()> {
             tokio::spawn(poller::run(store.clone(), "vllm", base));
         }
         if !args.no_tail {
-            tokio::spawn(tail::run(store.clone()));
+            tokio::spawn(tail::run(store.clone(), prices.clone()));
         }
         if !args.no_otlp {
             anyhow::ensure!(

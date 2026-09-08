@@ -10,7 +10,7 @@
 //! these needs no proxy, no configuration and no root, so a plain `mtop` sees
 //! sessions started in any other terminal.
 
-use crate::model::{Limit, RequestMetric, Shared, Usage, safe_label};
+use crate::model::{Limit, Price, RequestMetric, Shared, Usage, price_of, safe_label};
 use crate::scan::home;
 use serde_json::Value;
 use std::{
@@ -151,7 +151,7 @@ pub struct Tailer {
 impl Tailer {
     /// Read every transcript once, push whatever is new into the store, and
     /// return how many transcripts were written to in the last two minutes.
-    pub fn poll(&mut self, source: &Source, dir: &Path, store: &Shared) -> usize {
+    pub fn poll(&mut self, source: &Source, dir: &Path, store: &Shared, prices: &[Price]) -> usize {
         let mut active = 0;
         for path in transcripts(dir) {
             // First sight of a file is history, not activity: keep it out of rates.
@@ -164,8 +164,17 @@ impl Tailer {
             let mut s = store.lock().unwrap();
             for event in events {
                 match event {
-                    Event::Request(m) if backfill => s.finish_backfill(*m),
-                    Event::Request(m) => s.finish(*m),
+                    Event::Request(mut m) => {
+                        // Transcripts carry no cost of their own, so the table is the
+                        // only source of one. Without this the no-setup door
+                        // reports every request unpriced.
+                        m.estimated_cost_usd = price_of(prices, &m);
+                        if backfill {
+                            s.finish_backfill(*m)
+                        } else {
+                            s.finish(*m)
+                        }
+                    }
                     Event::Tool {
                         name,
                         duration_ms,
@@ -511,9 +520,9 @@ fn parse_codex(line: &str, path: &Path, state: &mut FileState) -> Vec<Event> {
 }
 
 /// One pass over every source whose directory exists, updating its status line.
-pub fn poll_all(tailer: &mut Tailer, store: &Shared) {
+pub fn poll_all(tailer: &mut Tailer, store: &Shared, prices: &[Price]) {
     for (source, dir) in SOURCES.iter().filter_map(|s| s.path().map(|p| (s, p))) {
-        let active = tailer.poll(source, &dir, store);
+        let active = tailer.poll(source, &dir, store, prices);
         store.lock().unwrap().source(
             source.name,
             format!("watching ~/{}, {active} active", source.dir),
@@ -522,14 +531,15 @@ pub fn poll_all(tailer: &mut Tailer, store: &Shared) {
 }
 
 /// Tail every source whose directory exists, once a second, forever.
-pub async fn run(store: Shared) {
+pub async fn run(store: Shared, prices: Vec<Price>) {
     let mut tailer = Tailer::default();
     loop {
         let mut t = std::mem::take(&mut tailer);
         let s = store.clone();
+        let pr = prices.clone();
         // Directory walks and reads are blocking I/O; keep them off the runtime.
         if let Ok(t) = tokio::task::spawn_blocking(move || {
-            poll_all(&mut t, &s);
+            poll_all(&mut t, &s, &pr);
             t
         })
         .await
@@ -652,22 +662,41 @@ mod tests {
         let store = crate::model::Store::shared(10);
         let mut t = Tailer::default();
         let src = &SOURCES[0];
-        assert_eq!(t.poll(src, &dir, &store), 1, "a fresh file is active");
+        // LINE's model, at the bundled rate, so the transcript door is checked
+        // end to end: read the file, price the request, land a cost in the store.
+        let prices = [Price {
+            model: "claude-fable-5-1".into(),
+            input_per_million: 10.0,
+            output_per_million: 50.0,
+            cache_read_per_million: Some(0.25),
+            cache_write_per_million: Some(12.5),
+        }];
+        assert_eq!(
+            t.poll(src, &dir, &store, &prices),
+            1,
+            "a fresh file is active"
+        );
         assert_eq!(store.lock().unwrap().completed, 1);
-        t.poll(src, &dir, &store);
+        assert_eq!(
+            store.lock().unwrap().unpriced,
+            0,
+            "a transcript request whose model is in the table must be priced"
+        );
+        assert!(store.lock().unwrap().known_cost_usd > 0.);
+        t.poll(src, &dir, &store, &prices);
         assert_eq!(store.lock().unwrap().completed, 1);
 
         let mut f = File::options().append(true).open(&path).unwrap();
         let second = LINE.replace("req_A", "req_B");
         write!(f, "{}", &second[..20]).unwrap();
-        t.poll(src, &dir, &store);
+        t.poll(src, &dir, &store, &prices);
         assert_eq!(store.lock().unwrap().completed, 1);
         writeln!(f, "{}", &second[20..]).unwrap();
-        t.poll(src, &dir, &store);
+        t.poll(src, &dir, &store, &prices);
         assert_eq!(store.lock().unwrap().completed, 2);
 
         writeln!(f, "{second}").unwrap();
-        t.poll(src, &dir, &store);
+        t.poll(src, &dir, &store, &prices);
         assert_eq!(store.lock().unwrap().completed, 2);
         assert_eq!(store.lock().unwrap().by_project["proj"].requests, 2);
         std::fs::remove_dir_all(&dir).unwrap();
