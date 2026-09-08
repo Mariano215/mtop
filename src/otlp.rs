@@ -75,11 +75,7 @@ async fn logs(State(r): State<Receiver>, body: String) -> StatusCode {
             Event::Request(m) => {
                 let mut m = *m;
                 if m.estimated_cost_usd.is_none() {
-                    m.estimated_cost_usd = r
-                        .prices
-                        .iter()
-                        .find(|p| p.model == m.model)
-                        .and_then(|p| p.cost(&m.provider, &m.usage));
+                    m.estimated_cost_usd = crate::model::price_of(&r.prices, &m);
                 }
                 *store.telemetry.entry(m.provider.clone()).or_default() += 1;
                 store.finish(m);

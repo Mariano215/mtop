@@ -151,14 +151,35 @@ pub struct Price {
     pub cache_write_per_million: Option<f64>,
 }
 
+/// True when the provider counts cache reads inside `input`, so cached tokens
+/// must come off before pricing. OpenAI does; Anthropic reports them alongside.
+///
+/// The transcript door names the tool rather than the vendor, so `claude-code`
+/// belongs with `anthropic` here. Getting this wrong is quiet, not loud: the
+/// subtraction underflows, `cost` returns None, and the request is merely
+/// counted unpriced.
+fn cache_counted_in_input(provider: &str) -> bool {
+    !matches!(provider, "anthropic" | "claude-code")
+}
+
+/// The table's cost for one request, or None when its model is not listed.
+///
+/// Every door that completes a request prices it through here, so a new door
+/// cannot quietly ship without pricing what it observes.
+pub fn price_of(prices: &[Price], m: &RequestMetric) -> Option<f64> {
+    prices
+        .iter()
+        .find(|p| p.model == m.model)
+        .and_then(|p| p.cost(&m.provider, &m.usage))
+}
+
 impl Price {
     pub fn cost(&self, provider: &str, usage: &Usage) -> Option<f64> {
         let mut input = usage.input?;
         let output = usage.output?;
         let cached = usage.cache_read.unwrap_or(0);
         let written = usage.cache_write.unwrap_or(0);
-        // OpenAI reports cached tokens as a subset; Anthropic reports them separately.
-        if provider != "anthropic" {
+        if cache_counted_in_input(provider) {
             input = input.checked_sub(cached)?;
         }
         let read_rate = if cached > 0 {
@@ -481,5 +502,82 @@ mod tests {
         assert_eq!(s.requests.len(), 1);
         assert_eq!(s.evicted, 2);
         assert_eq!(s.known_cost_usd, 3.);
+    }
+}
+
+#[cfg(test)]
+mod price_tests {
+    use super::*;
+
+    fn table() -> Vec<Price> {
+        vec![Price {
+            model: "claude-sonnet-5".into(),
+            input_per_million: 2.0,
+            output_per_million: 10.0,
+            cache_read_per_million: Some(0.2),
+            cache_write_per_million: Some(2.5),
+        }]
+    }
+
+    fn metric(provider: &str, usage: Usage) -> RequestMetric {
+        RequestMetric {
+            model: "claude-sonnet-5".into(),
+            provider: provider.into(),
+            usage,
+            ..Default::default()
+        }
+    }
+
+    /// The shape a Claude Code transcript actually reports: a tiny `input` and a
+    /// large separate `cache_read`. Priced as "claude-code" this used to
+    /// underflow to None, so every transcript request showed as unpriced.
+    #[test]
+    fn claude_code_transcript_shape_is_priced() {
+        let m = metric(
+            "claude-code",
+            Usage {
+                input: Some(2),
+                output: Some(80),
+                cache_read: Some(186452),
+                cache_write: None,
+            },
+        );
+        let cost = price_of(&table(), &m).expect("claude-code prices like anthropic");
+        // 2 in + 80 out + 186452 cache read, per million.
+        let want = (2.0 * 2.0 + 80.0 * 10.0 + 186452.0 * 0.2) / 1_000_000.0;
+        assert!((cost - want).abs() < 1e-12, "got {cost}, want {want}");
+    }
+
+    /// Codex reports cache reads inside `input`, like the OpenAI API, so they
+    /// must be subtracted or the input is billed twice.
+    #[test]
+    fn codex_transcript_shape_subtracts_cached_input() {
+        let m = metric(
+            "codex",
+            Usage {
+                input: Some(1000),
+                output: Some(50),
+                cache_read: Some(800),
+                cache_write: None,
+            },
+        );
+        let cost = price_of(&table(), &m).expect("codex model is in the table");
+        let want = (200.0 * 2.0 + 50.0 * 10.0 + 800.0 * 0.2) / 1_000_000.0;
+        assert!((cost - want).abs() < 1e-12, "got {cost}, want {want}");
+    }
+
+    #[test]
+    fn a_model_outside_the_table_stays_unpriced() {
+        let mut m = metric(
+            "claude-code",
+            Usage {
+                input: Some(1),
+                output: Some(1),
+                cache_read: None,
+                cache_write: None,
+            },
+        );
+        m.model = "some-model-we-do-not-price".into();
+        assert_eq!(price_of(&table(), &m), None);
     }
 }

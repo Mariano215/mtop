@@ -134,11 +134,7 @@ impl Completion {
             self.observer.metric.status = status.into();
         }
         let m = &mut self.observer.metric;
-        m.estimated_cost_usd = self
-            .prices
-            .iter()
-            .find(|p| p.model == m.model)
-            .and_then(|p| p.cost(&m.provider, &m.usage));
+        m.estimated_cost_usd = crate::model::price_of(&self.prices, m);
         self.store.lock().unwrap().finish(m.clone());
     }
 }
