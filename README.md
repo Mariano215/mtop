@@ -137,7 +137,8 @@ The request table fills from three sources: transcripts Claude Code and
 Codex already wrote (immediately, if any are less than an hour old),
 telemetry from tools you ran `setup` for (from their next call), and anything
 you route through `mtop run`. On a machine with none of those yet, the header
-still lists every tool found and the step that would observe it.
+still lists every tool found and the step that would observe it. New here?
+Read [MTop in five minutes](docs/TUTORIAL.md), a walk-through with real screens.
 
 ## Build from source
 
@@ -437,6 +438,7 @@ Anthropic input excludes separately reported cache tokens; OpenAI cached tokens 
 
 ## More
 
+- [MTop in five minutes](docs/TUTORIAL.md), a walk-through with real screens
 - [The refined specification](docs/SPEC.md)
 - [Releasing](packaging/RELEASING.md)
 
